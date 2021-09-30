@@ -1,0 +1,39 @@
+/*
+ Copyright 2021 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      https://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
+
+extern crate cc;
+
+fn main() {
+    cc::Build::new()
+        .include("third_party/grammars/")
+        .file("third_party/grammars/c/parser.c")
+        .flag("-std=c99")
+        .flag("-w")
+        .compile("tree-sitter-c");
+
+    cc::Build::new()
+        .cpp(true)
+        .include("third_party/grammars")
+        .file("third_party/grammars/cpp/scanner.cc")
+        .flag("-w")
+        .compile("tree-sitter-cpp-scanner");
+
+    cc::Build::new()
+        .include("third_party/grammars")
+        .file("third_party/grammars/cpp/parser.c")
+        .flag("-w")
+        .compile("tree-sitter-cpp-parser");
+}
