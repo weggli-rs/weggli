@@ -220,7 +220,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/googleprojectzero/weggli.git
 cd weggli; cargo build --release
-./target/release/wegggli
+./target/release/weggli
 ```
 
 ## Implementation details
