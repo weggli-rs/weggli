@@ -594,3 +594,56 @@ fn tertiary() {
     let matches = parse_and_match(needle, source);
     assert_eq!(matches, 1);
 }
+
+#[test]
+fn not_regression() {
+    // https://github.com/googleprojectzero/weggli/issues/2
+    let needle = "{free($handle); not: $handle= NULL;}";
+    let source = r"
+    void func()
+    {
+        free(data); //this should not match
+        data = NULL ; 
+        
+        free(handle); //this should match
+    }";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
+}
+
+
+#[test]
+fn allow_empty_blocks() {
+    let needle = "{if ($x){}}";
+    let source = r"
+    void func(){
+    if (foo) {
+        a = 1;
+        b = 2;
+        c = 3;
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
+
+}
+
+#[test]
+fn filter_identical_matches() {
+    // https://github.com/googleprojectzero/weggli/issues/3
+    let needle = "{if ($x){_;}}";
+    let source = r"
+    void func(){
+    if (foo) {
+        a = 1;
+        b = 2;
+        c = 3;
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
+}

@@ -9,7 +9,7 @@ It is designed to help security researchers identify interesting functionality i
 weggli performs pattern matching on Abstract Syntax Trees based on user provided queries. Its query language
 resembles C and C++ code, making it easy to turn interesting code patterns into queries.
 
-weggli is inspired by great tools like [Semgrep](https://semgrep.dev/), [Coccinelle](https://coccinelle) and [CodeQL](https://securitylab.github.com/tools/codeql), but makes some different design decisions:
+weggli is inspired by great tools like [Semgrep](https://semgrep.dev/), [Coccinelle](https://coccinelle.gitlabpages.inria.fr/website/), [joern](https://joern.readthedocs.io/en/latest/) and [CodeQL](https://securitylab.github.com/tools/codeql), but makes some different design decisions:
 
 - **C++ support**: weggli has first class support for modern C++ constructs, such as lambda expressions, range-based for loops and constexprs. 
 
@@ -220,7 +220,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/googleprojectzero/weggli.git
 cd weggli; cargo build --release
-./target/release/wegggli
+./target/release/weggli
 ```
 
 ## Implementation details

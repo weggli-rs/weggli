@@ -17,32 +17,41 @@ limitations under the License.
 use colored::Colorize;
 use std::{cmp, collections::HashMap};
 
+
 /// Struct for storing (partial) query matches.
 /// We really don't want to keep track of tree-sitter AST lifetimes so
 /// we do not store full nodes, but only their source range.
 /// TODO: Improve this struct + benchmarking
-
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct QueryResult {
     // for each captured node we store the offset ranges of its src location
-    ranges: Vec<std::ops::Range<usize>>,
-    // Mapping from Variables to index in `ranges`
+    captures: Vec<CaptureResult>,
+    // Mapping from Variables to index in `captures`
     pub vars: HashMap<String, usize>,
     // Range of the outermost node. This is badly named as it does not have to be a
     // function definition, but for final query results it normally is.
     function: std::ops::Range<usize>,
 }
 
+/// Stores the result (== source range) for a single capture.
+/// We also store the corresponding query id and capture index
+/// to make it possible to look up the result for a certain capture
+/// index (see QueryResult::get_capture_result)
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaptureResult {
+    pub range: std::ops::Range<usize>,
+    pub query_id: usize,
+    pub capture_idx: u32,
+}
+
 impl<'a, 'b> QueryResult {
     pub fn new(
-        mut ranges: Vec<std::ops::Range<usize>>,
+        captures: Vec<CaptureResult>,
         vars: HashMap<String, usize>,
         function: std::ops::Range<usize>,
     ) -> QueryResult {
-        ranges.sort_by(|a, b| a.start.cmp(&b.start));
-
         QueryResult {
-            ranges,
+            captures,
             vars,
             function,
         }
@@ -61,20 +70,23 @@ impl<'a, 'b> QueryResult {
         // TODO: We should just store the range of the header and always print it in full.
         let mut header_end = linebreak_index(source, self.function.start, 1, false);
 
-        if self.ranges.len() > 1 {
+        if self.captures.len() > 1 {
             // Ensure we don't overlap with the range of the next node.
-            header_end = cmp::min(header_end, self.ranges[1].start - 1);
+            header_end = cmp::min(header_end, self.captures[1].range.start - 1);
         }
 
         result += &source[self.function.start..header_end];
 
         let mut offset = header_end;
 
+        let mut sorted = self.captures.clone();
+        sorted.sort_by(|a, b| a.range.start.cmp(&b.range.start));
+
         // Before printing out the different nodes, we first filter out overlapping nodes.
         // If we matched on `(a + b)` and also captured `b` clean_ranges will not contain
         // the range for `b`.
-        let mut clean_ranges: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.ranges.len());
-        for r in self.ranges.iter().skip(1) {
+        let mut clean_ranges: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.captures.len());
+        for r in sorted.into_iter().skip(1).map(|c| c.range) {
             if !clean_ranges.is_empty() && clean_ranges.last().unwrap().contains(&r.start) {
                 continue;
             }
@@ -127,14 +139,14 @@ impl<'a, 'b> QueryResult {
     pub fn value(&self, var: &str, source: &'b str) -> Option<&'b str> {
         match self.vars.get(var) {
             None => None,
-            Some(i) => Some(&source[self.ranges[*i].clone()]),
+            Some(i) => Some(&source[self.captures[*i].range.clone()]),
         }
     }
 
     /// Try to merge two QueryResults from the same source file.
     /// The function returns None if the variable assignments for the two results differ.
     /// If `enforce_order` is set this can fail because the new ranges
-    /// are not strictly after the current ranges. 
+    /// are not strictly after the current ranges.
     pub fn merge(
         &self,
         other: &QueryResult,
@@ -143,24 +155,24 @@ impl<'a, 'b> QueryResult {
     ) -> Option<QueryResult> {
         let mut vars = self.vars.clone();
 
-        let mut ranges = self.ranges.clone();
+        let mut captures = self.captures.clone();
 
         if enforce_order {
             if other
-                .ranges
+                .captures
                 .iter()
-                .any(|r| self.ranges.iter().any(|r2| r.start <= r2.end))
+                .any(|r| self.captures.iter().any(|r2| r.range.start <= r2.range.end))
             {
                 return None;
             }
         }
 
-        ranges.extend(other.ranges.clone());
+        captures.extend(other.captures.clone());
 
         for (k, v) in other.vars.iter() {
             match self.value(k, source) {
                 None => {
-                    vars.insert(k.clone(), v + self.ranges.len());
+                    vars.insert(k.clone(), v + self.captures.len());
                 }
                 Some(s) => {
                     if s != other.value(k, source).unwrap() {
@@ -170,7 +182,7 @@ impl<'a, 'b> QueryResult {
             }
         }
 
-        Some(QueryResult::new(ranges, vars, self.function.clone()))
+        Some(QueryResult::new(captures, vars, self.function.clone()))
     }
 
     /// Checks if two QueryResults from different source files have compatible variable assignments
@@ -182,6 +194,13 @@ impl<'a, 'b> QueryResult {
                 false
             }
         })
+    }
+
+    /// Try to find the result for the capture `capture_idx` in query `query_id`
+    pub fn get_capture_result(&self, query_id: usize, capture_idx: u32) -> Option<&CaptureResult> {
+        self.captures
+            .iter()
+            .find(|c| c.capture_idx == capture_idx && c.query_id == query_id)
     }
 }
 
@@ -201,7 +220,6 @@ pub fn merge_results(
         })
         .collect()
 }
-
 
 // Returns the index of the nth newline before (if `backwards` is set ) or after `source[index]`
 // This is used to display additional context around captured nodes. If not enough newlines
@@ -236,7 +254,10 @@ fn test_linebreak_index() {
     let index = input.find('b').unwrap();
 
     assert_eq!(linebreak_index(&input, index, 1, true), 0);
-    assert_eq!(linebreak_index(&input, index, 1, false), input.find('d').unwrap());
+    assert_eq!(
+        linebreak_index(&input, index, 1, false),
+        input.find('d').unwrap()
+    );
     assert_eq!(linebreak_index(&input, index, 5, false), input.len());
     assert_eq!(linebreak_index(&input, index, 4, true), 0);
 }

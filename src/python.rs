@@ -35,7 +35,7 @@ fn parse_query(q: &str) -> PyResult<QueryTreePy> {
     let tree = crate::parse(q, false);
     let mut c = tree.walk();
 
-    let qt = crate::builder::build_querytree(q, &mut c, 0, false);
+    let qt = crate::builder::build_query_tree(q, &mut c, false);
     Ok(QueryTreePy { qt })
 }
 
