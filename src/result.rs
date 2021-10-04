@@ -22,7 +22,7 @@ use std::{cmp, collections::HashMap};
 /// We really don't want to keep track of tree-sitter AST lifetimes so
 /// we do not store full nodes, but only their source range.
 /// TODO: Improve this struct + benchmarking
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct QueryResult {
     // for each captured node we store the offset ranges of its src location
     captures: Vec<CaptureResult>,
@@ -37,7 +37,7 @@ pub struct QueryResult {
 /// We also store the corresponding query id and capture index
 /// to make it possible to look up the result for a certain capture
 /// index (see QueryResult::get_capture_result)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaptureResult {
     pub range: std::ops::Range<usize>,
     pub query_id: usize,

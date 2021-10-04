@@ -601,12 +601,12 @@ fn not_regression() {
     let needle = "{free($handle); not: $handle= NULL;}";
     let source = r"
     void func()
-{
+    {
         free(data); //this should not match
         data = NULL ; 
         
         free(handle); //this should match
-}";
+    }";
 
     let matches = parse_and_match(needle, source);
 
@@ -629,4 +629,21 @@ fn allow_empty_blocks() {
 
     assert_eq!(matches, 1);
 
+}
+
+#[test]
+fn filter_identical_matches() {
+    // https://github.com/googleprojectzero/weggli/issues/3
+    let needle = "{if ($x){_;}}";
+    let source = r"
+    void func(){
+    if (foo) {
+        a = 1;
+        b = 2;
+        c = 3;
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
 }

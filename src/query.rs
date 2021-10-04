@@ -116,7 +116,9 @@ impl<'a> QueryTree {
     pub fn matches(&self, root: Node, source: &str) -> Vec<QueryResult> {
         let mut cache = HashMap::new();
 
-        self.match_internal(root, source, &mut cache)
+        let mut results = self.match_internal(root, source, &mut cache);
+        results.dedup();
+        results
     }
 
     /// This is the core method for query matching.
