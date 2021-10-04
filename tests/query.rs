@@ -613,3 +613,20 @@ fn not_regression() {
     assert_eq!(matches, 1);
 }
 
+
+#[test]
+fn allow_empty_blocks() {
+    let needle = "{if ($x){}}";
+    let source = r"
+    void func(){
+    if (foo) {
+        a = 1;
+        b = 2;
+        c = 3;
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
+
+}

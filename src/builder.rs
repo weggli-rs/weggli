@@ -235,7 +235,7 @@ impl QueryBuilder {
                 }
             }
             // Build a multi-pattern tree for {.., .., ..}
-            "compound_statement" => {
+            "compound_statement" if c.node().named_child_count() > 0 => {
                 self.id += 1;
                 let mut c = c.node().walk();
                 let capture = Capture::Subquery(Box::new(_build_query_tree(
