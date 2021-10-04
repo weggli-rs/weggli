@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Query};
 
 use crate::capture::Capture;
-use crate::result::QueryResult;
+use crate::result::{CaptureResult, QueryResult};
 
 /// A query tree is our internal representation of a weggli search query.
 /// tree-sitter's query syntax does not support all features that we need so
@@ -139,30 +139,9 @@ impl<'a> QueryTree {
             pattern_results.push(Vec::new());
         }
 
-        // We need to capture nodes before and behind negative queries to allow for
-        // negation checks. Use capture_ids to store all ids we are interested in
-        // and store the nodes in capture_nodes later on.
-        let mut capture_ids = HashSet::new();
-        let mut capture_nodes = HashMap::with_capacity(self.negations.len() * 2);
-        self.negations.iter().for_each(|n| {
-            capture_ids.insert(n.previous_capture_index);
-            capture_ids.insert(n.previous_capture_index + 1);
-        });
-
         for m in qc.matches(&self.query, root, text_callback) {
             // Process the query match, run subqueries and store the final QueryResults in pattern_results
             pattern_results[m.pattern_index].extend(self.process_match(cache, source, &m));
-
-            // Store capture nodes for ordering checks of negative queries.
-            if !self.negations.is_empty() {
-                m.captures
-                    .iter()
-                    .map(|c| (c.node, c.index as i64))
-                    .filter(|(_, i)| capture_ids.contains(i))
-                    .for_each(|(n, i)| {
-                        capture_nodes.insert(i, n);
-                    });
-            }
         }
 
         // Return an empty result if any of our patterns have 0 results.
@@ -203,15 +182,15 @@ impl<'a> QueryTree {
                         // We know that the negative match has to come _after_ the node captured by the index
                         // previous_capture_index and _before_ the capture after that.
                         let index = neg.previous_capture_index;
-                        if let Some(c) = capture_nodes.get(&index) {
+                        if let Some(c) = result.get_capture_result(self.id, index as u32) {
                             // negative match is too early. skip it
-                            if n.start_offset() < c.byte_range().end {
+                            if n.start_offset() < c.range.end {
                                 return false;
                             }
                         };
-                        if let Some(c) = capture_nodes.get(&(index + 1)) {
+                        if let Some(c) = result.get_capture_result(self.id, (index + 1) as u32) {
                             // negative match comes too late. skip it
-                            if n.start_offset() > c.byte_range().start {
+                            if n.start_offset() > c.range.start {
                                 return false;
                             }
                         }
@@ -244,22 +223,35 @@ impl<'a> QueryTree {
         for c in m.captures {
             let capture = &self.captures[c.index as usize];
 
+            let capture_result = CaptureResult {
+                range: c.node.byte_range(),
+                query_id: self.id,
+                capture_idx: c.index
+            };
+
+            // TODO: Do we need to store sub queries in captures as well?
+            if !matches!(capture, Capture::Subquery(_)) {
+                r.push(capture_result)
+            }
+
             match capture {
                 Capture::Variable(s) => {
-                    r.push(c.node.byte_range());
                     vars.insert(s.clone(), r.len() - 1);
                 }
-                Capture::Display => r.push(c.node.byte_range()),
                 Capture::Subquery(t) => {
                     subqueries.push((t, c));
                 }
-                Capture::Check(_) => r.push(c.node.byte_range()),
+                _ => (),
             }
         }
 
-        let function = r.first().unwrap_or(&(0usize..0usize)).clone();
+        let function = if let Some(c) = r.first() {
+            c.range.clone()
+        } else {
+            0usize..0usize
+        };
 
-        let qr = QueryResult::new(r,vars, function);
+        let qr = QueryResult::new(r, vars, function);
 
         let query_results = subqueries.iter().fold(vec![qr], |results, (t, c)| {
             // avoid running subqueries if merging failed.
