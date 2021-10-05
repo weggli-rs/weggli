@@ -106,8 +106,8 @@ fn _loop() {
 
 #[test]
 fn subquery() {
-    let needle = "{int $something = _($i+$i);}";
-    let source = "void x(){int foo = 100*17-f(bar+bar);}";
+    let needle = "{int $something = _($i+1);}";
+    let source = "void x(){int foo = 100*17-f(bar+1);}";
 
     let matches = parse_and_match(needle, source);
 
@@ -642,6 +642,44 @@ fn filter_identical_matches() {
         b = 2;
         c = 3;
     }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
+}
+
+#[test]
+fn test_commutative() {
+    let needle = "{if ($x + size > 0){}}";
+    let source = r"
+    void func(){
+    if (size + offset > 0) {
+        func2();
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 1);
+
+    let needle = "{while (_(C_INUSE & _($psize))){k == $psize;}}";
+    let source = r"
+    static int alloc_rev(struct chunk *c)
+    {
+	int i;
+	size_t k;
+	while (!((k=c->psize) & C_INUSE)) {
+		i = bin_index(k);
+		lock_bin(i);
+		if (c->psize == k) {
+			unbin(PREV_CHUNK(c), i);
+			unlock_bin(i);
+			return 1;
+		}
+		unlock_bin(i);
+	}
+	return 0;
+    }
+    ";
 
     let matches = parse_and_match(needle, source);
 
