@@ -4,6 +4,7 @@ version = "0.2.1"
 authors = ["fwilhelm"]
 edition = "2018"
 license = "Apache-2.0"
+description = "weggli is a fast and robust semantic search tool for C and C++ codebases. It is designed to help security researchers identify interesting functionality in large codebases."
 
 
 [features]
