@@ -199,6 +199,17 @@ impl QueryBuilder {
         false
     }
 
+    // Returns true if `n` is a comparison binary expression
+    fn is_comparison_binary_exp(&self, n: Node) -> bool {
+        assert!(n.kind() == "binary_expression");
+
+        if let Some(op) = n.child(1) {
+            [">", "<", "<=", ">="].contains(&op.kind())
+        } else {
+            false
+        }
+    }
+
     // Returns true if `n` is a commutative binary expression
     fn is_commutative_binary_exp(&self, n: Node) -> bool {
         assert!(n.kind() == "binary_expression");
@@ -208,6 +219,12 @@ impl QueryBuilder {
         } else {
             false
         }
+    }
+
+    // Returns true if `n` is a binary expression that we can
+    // automatically transform into a more generic version.  
+    fn is_transformable_binary_exp(&self, n: Node) -> bool {
+        self.is_comparison_binary_exp(n) || self.is_commutative_binary_exp(n)
     }
 
     /// Translate the tree below `c` into a tree-sitter query string.
@@ -234,21 +251,29 @@ impl QueryBuilder {
         // First handle special cases. Note the implicit fallthroughs to the
         // default case after this match statement.
         match kind {
-            "binary_expression" if self.is_commutative_binary_exp(c.node()) => {
+            "binary_expression" if self.is_transformable_binary_exp(c.node()) => {
                 assert!(c.goto_first_child());
                 let left = self.build(c, depth + 1);
 
                 // operator
                 assert!(c.goto_next_sibling());
+                let op = c.node().kind();
 
-                // handle += / -= / ..
-                let operator = self.build(c, depth + 1);
+                let alt_op = match op {
+                    ">" => "<",
+                    "<" => ">",
+                    "<=" => ">=",
+                    ">=" => "<=",
+                    // handle +, *, &, |, == and != 
+                    _ => op,
+                };
+
                 assert!(c.goto_next_sibling());
                 let right = self.build(c, depth + 1);
 
                 c.goto_parent();
-                return format! {"[(binary_expression left: {0} operator: {1} right: {2})
-                (binary_expression left: {2} operator: {1} right: {0})]", left, operator, right};
+                return format! {"[(binary_expression left: {0} operator: \"{1}\" right: {2})
+                (binary_expression left: {2} operator: \"{3}\" right: {0})]", left, op, right, alt_op};
             }
             // Handle not: xyz;
             "labeled_statement" => {

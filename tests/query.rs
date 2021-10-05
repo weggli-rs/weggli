@@ -685,3 +685,27 @@ fn test_commutative() {
 
     assert_eq!(matches, 1);
 }
+
+#[test]
+fn test_comparisons() {
+    let needle = "{if ($x + size > dst_size){}}";
+    let source = r"
+    void func(){
+    if (dst_size < size + $x) {
+        func2();
+    }}";
+
+    let matches = parse_and_match_cpp(needle, source);
+
+    assert_eq!(matches, 1);
+
+    let needle = "{while ($x <= max) {$x++;}}";
+    let source = r"
+    void func(){
+        while (max >= count) {count++;}
+    }";
+
+    let matches = parse_and_match_cpp(needle, source);
+
+    assert_eq!(matches, 1);
+}
