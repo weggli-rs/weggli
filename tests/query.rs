@@ -60,7 +60,7 @@ fn while_simple() {
 
     let matches = parse_and_match(needle, source);
 
-    assert_eq!(matches, 2);
+    assert_eq!(matches, 1);
 }
 
 #[test]
@@ -684,6 +684,28 @@ fn test_commutative() {
     let matches = parse_and_match(needle, source);
 
     assert_eq!(matches, 1);
+
+    let needle = "{if ($x - size > 0){}}";
+    let source = r"
+    void func(){
+    if (size - offset > 0) {
+        func2();
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 0);
+
+    let needle = "{if ($x / size > 0){}}";
+    let source = r"
+    void func(){
+    if (size / offset > 0) {
+        func2();
+    }}";
+
+    let matches = parse_and_match(needle, source);
+
+    assert_eq!(matches, 0);
 }
 
 #[test]
@@ -708,4 +730,24 @@ fn test_comparisons() {
     let matches = parse_and_match_cpp(needle, source);
 
     assert_eq!(matches, 1);
+}
+
+#[test]
+fn test_numbers() {
+    let needle = "{$x = 10;}";
+    let source = r"
+    void func(){
+        a = 10; // match
+        b = 0xa; // match
+        c = 10u; // match
+        d = 012; // match
+        f = 0x100; // no match
+        g = 0x10; // no match
+        h = 010; // no match
+        i = 3.14 // no match 
+    }}";
+
+    let matches = parse_and_match_cpp(needle, source);
+
+    assert_eq!(matches, 4);
 }

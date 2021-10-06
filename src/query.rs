@@ -19,6 +19,7 @@ use tree_sitter::{Node, Query};
 
 use crate::capture::Capture;
 use crate::result::{CaptureResult, QueryResult};
+use crate::util::parse_number_literal;
 
 /// A query tree is our internal representation of a weggli search query.
 /// tree-sitter's query syntax does not support all features that we need so
@@ -243,6 +244,15 @@ impl<'a> QueryTree {
                 Capture::Subquery(t) => {
                     subqueries.push((t, c));
                 }
+                Capture::Number(i) => {
+                    if let Some(y) = parse_number_literal(&source[c.node.byte_range()]) {
+                        if *i!=y {
+                            return vec![];
+                        }
+                    } else {
+                        return vec![];
+                    }
+                }
                 _ => (),
             }
         }
@@ -301,3 +311,4 @@ impl<'a> QueryTree {
             .collect()
     }
 }
+

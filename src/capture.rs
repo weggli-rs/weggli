@@ -25,6 +25,7 @@ pub enum Capture {
     Display,
     Variable(String),
     Check(String),
+    Number(i128),
     Subquery(Box<crate::query::QueryTree>),
 }
 

@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::capture::{add_capture, Capture};
 use crate::query::{NegativeQuery, QueryTree};
+use crate::util::parse_number_literal;
 use tree_sitter::{Node, TreeCursor};
 
 /// Translate a parsed and validated input source (specified by `source` and `cursor`) into a `QueryTree`.
@@ -222,7 +223,7 @@ impl QueryBuilder {
     }
 
     // Returns true if `n` is a binary expression that we can
-    // automatically transform into a more generic version.  
+    // automatically transform into a more generic version.
     fn is_transformable_binary_exp(&self, n: Node) -> bool {
         self.is_comparison_binary_exp(n) || self.is_commutative_binary_exp(n)
     }
@@ -264,7 +265,7 @@ impl QueryBuilder {
                     "<" => ">",
                     "<=" => ">=",
                     ">=" => "<=",
-                    // handle +, *, &, |, == and != 
+                    // handle +, *, &, |, == and !=
                     _ => op,
                 };
 
@@ -319,6 +320,18 @@ impl QueryBuilder {
             "expression_statement" => {
                 c.goto_first_child();
                 return self.build(c, depth);
+            }
+            "number_literal" => {
+                let pattern = self.get_text(&c.node());
+
+                let capture = if let Some(num) = parse_number_literal(pattern) {
+                    Capture::Number(num)
+                } else {
+                    warn!{"Could not parse {} as a number. Forcing string matching", pattern}
+                    Capture::Check(pattern.to_string())
+                };
+
+                return format! {"(number_literal) @{}", &add_capture(&mut self.captures, capture)};
             }
             _ => (),
         }
