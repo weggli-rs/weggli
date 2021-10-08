@@ -15,7 +15,8 @@ limitations under the License.
 */
 
 use colored::Colorize;
-use std::{cmp, collections::HashMap};
+use std::cmp;
+use rustc_hash::FxHashMap;
 
 
 /// Struct for storing (partial) query matches.
@@ -27,7 +28,7 @@ pub struct QueryResult {
     // for each captured node we store the offset ranges of its src location
     captures: Vec<CaptureResult>,
     // Mapping from Variables to index in `captures`
-    pub vars: HashMap<String, usize>,
+    pub vars: FxHashMap<String, usize>,
     // Range of the outermost node. This is badly named as it does not have to be a
     // function definition, but for final query results it normally is.
     function: std::ops::Range<usize>,
@@ -47,7 +48,7 @@ pub struct CaptureResult {
 impl<'a, 'b> QueryResult {
     pub fn new(
         captures: Vec<CaptureResult>,
-        vars: HashMap<String, usize>,
+        vars: FxHashMap<String, usize>,
         function: std::ops::Range<usize>,
     ) -> QueryResult {
         QueryResult {

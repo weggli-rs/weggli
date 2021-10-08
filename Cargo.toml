@@ -21,10 +21,11 @@ tree-sitter = "0.19.2"
 log = "0.4.11"
 clap = "2.33.3"
 walkdir = "2.3.1"
-rayon = "1.5.0"
+rayon = "1.5.1"
 colored = "2.0.0"
 simplelog = "0.10.0"
 regex = "1"
+rustc-hash = "1.1.0"
 
 [dependencies.pyo3]
 version = "0.13.0"

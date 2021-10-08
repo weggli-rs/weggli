@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashMap;
+use std::collections::HashSet;
 use tree_sitter::{Node, Query};
 
 use crate::capture::Capture;
@@ -36,7 +37,7 @@ pub struct QueryTree {
 }
 
 /// An internal cache for memoization of subquery results.
-type Cache = HashMap<CacheKey, Vec<QueryResult>>;
+type Cache = FxHashMap<CacheKey, Vec<QueryResult>>;
 
 /// Negative Queries are used to implement the not: feature.
 /// In addition to the QueryTree we also store the
@@ -115,7 +116,7 @@ impl<'a> QueryTree {
     // Find all matches for the input described by the AST `root` node and its source code.
     // This is a simple wrapper around QueryTree::match_internal
     pub fn matches(&self, root: Node, source: &str) -> Vec<QueryResult> {
-        let mut cache = HashMap::new();
+        let mut cache: Cache = FxHashMap::default();
 
         let mut results = self.match_internal(root, source, &mut cache);
         results.dedup();
@@ -219,7 +220,8 @@ impl<'a> QueryTree {
         m: &tree_sitter::QueryMatch,
     ) -> Vec<QueryResult> {
         let mut r = Vec::with_capacity(m.captures.len());
-        let mut vars = HashMap::with_capacity(self.variables.len());
+        let mut vars: FxHashMap<String, usize> =
+            FxHashMap::with_capacity_and_hasher(self.variables.len(), Default::default());
 
         let mut subqueries = Vec::new();
 
@@ -229,7 +231,7 @@ impl<'a> QueryTree {
             let capture_result = CaptureResult {
                 range: c.node.byte_range(),
                 query_id: self.id,
-                capture_idx: c.index
+                capture_idx: c.index,
             };
 
             // TODO: Do we need to store sub queries in captures as well?
@@ -246,7 +248,7 @@ impl<'a> QueryTree {
                 }
                 Capture::Number(i) => {
                     if let Some(y) = parse_number_literal(&source[c.node.byte_range()]) {
-                        if *i!=y {
+                        if *i != y {
                             return vec![];
                         }
                     } else {
@@ -311,4 +313,3 @@ impl<'a> QueryTree {
             .collect()
     }
 }
-
