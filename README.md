@@ -227,6 +227,12 @@ weggli '_ $func($t *$input, $t2 *$output) {
 }' ./target/src
 ```
 
+## Install
+
+```sh
+$ cargo install weggli
+```
+
 ## Build Instruction
 
 ```sh
