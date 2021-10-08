@@ -38,7 +38,7 @@ pub struct Args {
 /// The clap crate handles program exit and error messages for invalid arguments.
 pub fn parse_arguments() -> Args {
     let matches = App::new("weggli")
-        .version("0.2.1")
+        .version("0.2.2")
         .author("Felix Wilhelm <fwilhelm@google.com>")
         .about(help::ABOUT)
         .setting(clap::AppSettings::ArgRequiredElseHelp)
