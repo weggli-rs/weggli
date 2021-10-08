@@ -301,6 +301,10 @@ mod help {
  not:     Negative sub queries. Only show results that do not match the
           following sub query. For example, '{not: $fv==NULL; not: $fv!=NULL *$v;}'
           would find pointer dereferences that are not preceded by a NULL check.
+
+strict:   Enable stricter matching. This turns off statement unwrapping and greedy
+          function name matching. For example 'strict: func();' will not match
+          on 'if (func() == 1)..' or 'a->func()' anymore. 
  
  weggli automatically unwraps expression statements in the query source 
  to search for the inner expression instead. This means that the query `{func($x);}` 

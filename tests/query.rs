@@ -751,3 +751,45 @@ fn test_numbers() {
 
     assert_eq!(matches, 4);
 }
+
+#[test]
+fn test_strict_statement() {
+    let needle = "{strict: randomFunction('a', 10+20);}";
+    let source = r"
+    void func(){
+        x = randomFunction('a', 10+20); // no match
+        randomFunction('a', 10+20); // match
+        if (true) {
+            y = randomFunction('a', 10+20); // no match
+            randomFunction('a',10+20); // match
+        }
+    }";
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 2);
+}
+
+#[test]
+fn test_strict_calls() {
+    let needle = "{strict: free(a);}";
+    let source = r"
+    void func(){
+        free(a); // match
+        foo::free(a); // no match
+        x->free(a); // no match
+        if (free(a)==0) { // only match for second needle
+            nop;
+        }
+
+        if (x::free(a)==0) { // no match
+            nop;
+        }
+    }";
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+
+    let needle = "{strict: _(free(a));}";
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 2);
+}
