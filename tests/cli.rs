@@ -156,3 +156,15 @@ fn test_unique() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn invalid_utf8() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("memcpy(_,_,_);")
+        .arg("./third_party/examples/invalid-utf8.c");
+    cmd.assert().success().stdout(predicate::str::contains(
+        "memcpy"));
+
+    Ok(())
+}

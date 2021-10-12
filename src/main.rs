@@ -425,7 +425,7 @@ fn parse_files_worker(
                     Err(_) => return None,
                 };
 
-                let source = std::str::from_utf8(&c).ok()?;
+                let source = String::from_utf8_lossy(&c);
 
                 let potential_match = work.iter().any(|WorkItem { qt: _, identifiers }| {
                     identifiers.iter().all(|i| source.find(i).is_some())
@@ -434,7 +434,7 @@ fn parse_files_worker(
                 if !potential_match {
                     None
                 } else {
-                    Some((weggli::parse(source, is_cpp), source.to_string()))
+                    Some((weggli::parse(&source, is_cpp), source.to_string()))
                 }
             };
             if let Some((source_tree, source)) = maybe_parse(&path) {
