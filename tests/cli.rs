@@ -114,7 +114,7 @@ fn successfull_run() -> Result<(), Box<dyn std::error::Error>> {
 fn multi_pattern() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("weggli")?;
 
-    cmd.arg("$func(_,hdr->sender);")
+    cmd.arg("$func(_,hdr->sender)")
         .arg("-p _ $func($ptr *$src){memcpy (_,$src,_);}")
         .arg("./third_party/examples/cluster.c");
     cmd.assert().success().stdout(predicate::str::contains(

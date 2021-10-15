@@ -48,11 +48,6 @@ fn main() {
         colored::control::set_override(true)
     }
 
-    // Lifetime helper for normalized patterns.
-    // If we need to manually fix-up a search pattern we store
-    // it in the vec to keep it alive until the end of execution.
-    let mut normalized_patterns = Vec::new();
-
     // Keep track of all variables used in the input pattern(s)
     let mut variables = HashSet::new();
 
@@ -66,12 +61,7 @@ fn main() {
         .pattern
         .iter()
         .map(|pattern| {
-            let qt = parse_search_pattern(
-                pattern,
-                args.cpp,
-                args.force_query,
-                &mut &mut normalized_patterns,
-            );
+            let qt = parse_search_pattern(pattern, args.cpp, args.force_query);
 
             let identifiers = qt.identifiers();
             variables.extend(qt.variables());
@@ -189,14 +179,27 @@ const VALID_NODE_KINDS: &[&str] = &[
 /// We support some basic normalization (adding { } around queries) and store the normalized form
 /// in `normalized_patterns` to avoid lifetime issues.
 /// For invalid patterns, validate_query will cause a process exit with a human-readable error message
-fn parse_search_pattern(
-    pattern: &String,
-    is_cpp: bool,
-    force_query: bool,
-    normalized_patterns: &mut Vec<String>,
-) -> QueryTree {
+fn parse_search_pattern(pattern: &String, is_cpp: bool, force_query: bool) -> QueryTree {
     let mut tree = weggli::parse(pattern, is_cpp);
     let mut p = pattern;
+
+    let temp_pattern;
+
+    // Try to fix missing ';' at the end of a query.
+    // weggli 'memcpy(a,b,size)' should work. 
+    if tree.root_node().has_error() {
+        if !pattern.ends_with(';') {
+            temp_pattern = format!("{};", &p);
+            let fixed_tree = weggli::parse(&temp_pattern, is_cpp);
+            if !fixed_tree.root_node().has_error() {
+                info!("normalizing query: add missing ;");
+                tree = fixed_tree;
+                p = &temp_pattern;
+            }
+        }
+    }
+
+    let temp_pattern2;
 
     // Try to do query normalization to support missing { }
     // 'memcpy(_);' -> {memcpy(_);}
@@ -204,12 +207,12 @@ fn parse_search_pattern(
         let c = tree.root_node().child(0);
         if let Some(n) = c {
             if !VALID_NODE_KINDS.contains(&n.kind()) {
-                info!("normalizing query: {}", &p);
-                normalized_patterns.push(format!("{{{}}}", &p));
-                let fixed_tree = weggli::parse(&normalized_patterns.last().unwrap(), is_cpp);
+                temp_pattern2 = format!("{{{}}}", &p);
+                let fixed_tree = weggli::parse(&temp_pattern2, is_cpp);
                 if !fixed_tree.root_node().has_error() {
+                    info!("normalizing query: add {}", "{}");
                     tree = fixed_tree;
-                    p = normalized_patterns.last().unwrap();
+                    p = &temp_pattern2;
                 }
             }
         }
@@ -418,7 +421,6 @@ fn parse_files_worker(
     files
         .into_par_iter()
         .for_each_with(sender, move |sender, path| {
-
             let maybe_parse = |path| {
                 let c = match fs::read(path) {
                     Ok(content) => content,
@@ -583,7 +585,7 @@ fn multi_query_worker(
         let a = part1.last_mut().unwrap();
         for b in part2 {
             filter(a, b);
-            filter(b,a);
+            filter(b, a);
         }
     }
 
