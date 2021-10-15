@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 use crate::capture::{add_capture, Capture};
 use crate::query::{NegativeQuery, QueryTree};
 use crate::util::parse_number_literal;
+use colored::Colorize;
 use tree_sitter::{Node, TreeCursor};
 
 /// Translate a parsed and validated input source (specified by `source` and `cursor`) into a `QueryTree`.
@@ -469,8 +470,18 @@ impl QueryBuilder {
     ) -> Option<String> {
         if self.is_subexpr_wildcard(c.node()) {
             let mut arg = c.node().child_by_field_name("arguments").unwrap().walk();
+
             arg.goto_first_child();
             arg.goto_next_sibling();
+            let mut copy = arg.clone();
+            copy.goto_next_sibling();
+            if copy.goto_next_sibling() {
+                warn! {"sub expression '{}' with multiple arguments is not supported.
+                Do you want to match on a function call '$foo()' instead?",
+                self.get_text(&c.node()).to_string().red()};
+                warn! {"converting to function call..."};
+                return None;
+            }
 
             // Wildcards for depth 0 are meaningless. Just unwrap it.
             if depth == 0 {

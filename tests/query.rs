@@ -1,23 +1,23 @@
 /*
- Copyright 2021 Google LLC
+Copyright 2021 Google LLC
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-      https://www.apache.org/licenses/LICENSE-2.0
+     https://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
- */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
-use weggli::builder::build_query_tree;
 use simplelog::*;
+use weggli::{builder::build_query_tree, result::QueryResult};
 
-fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> usize {
+fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> Vec<QueryResult> {
     let _ = SimpleLogger::init(LevelFilter::Info, Config::default());
     log::set_max_level(log::LevelFilter::Debug);
     let tree = weggli::parse(needle, cpp);
@@ -28,21 +28,22 @@ fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> usize {
     println!("{}", source_tree.root_node().to_sexp());
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c,  cpp);
+    let qt = build_query_tree(needle, &mut c, cpp);
 
     let matches = qt.matches(source_tree.root_node(), source);
+
     for m in &matches {
         println!("{}", m.display(source, 0, 0));
     }
-    matches.len()
+    matches
 }
 
 fn parse_and_match_cpp(needle: &str, source: &str) -> usize {
-    parse_and_match_helper(needle, source, true)
+    parse_and_match_helper(needle, source, true).len()
 }
 
 fn parse_and_match(needle: &str, source: &str) -> usize {
-    parse_and_match_helper(needle, source, false)
+    parse_and_match_helper(needle, source, false).len()
 }
 
 #[test]
@@ -198,7 +199,7 @@ fn identifiers() {
     let tree = weggli::parse(needle, false);
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c,  false);
+    let qt = build_query_tree(needle, &mut c, false);
 
     let identifiers = qt.identifiers();
 
@@ -613,7 +614,6 @@ fn not_regression() {
     assert_eq!(matches, 1);
 }
 
-
 #[test]
 fn allow_empty_blocks() {
     let needle = "{if ($x){}}";
@@ -628,7 +628,6 @@ fn allow_empty_blocks() {
     let matches = parse_and_match(needle, source);
 
     assert_eq!(matches, 1);
-
 }
 
 #[test]
@@ -792,4 +791,35 @@ fn test_strict_calls() {
     let needle = "{strict: _(free(a));}";
     let matches = parse_and_match_cpp(needle, source);
     assert_eq!(matches, 2);
+}
+
+#[test]
+fn subexpression_with_multiple_args() {
+    // https://github.com/googleprojectzero/weggli/issues/14
+
+    // An unfortunate effect of our sub expression syntax _($x) is 
+    // that people might wrongly use it as a wildcard function call
+    // _($a, $b). This doesn't work (you want to use $fn($a,$b) instead).
+    // As we don't support sub expressions with multiple arguments, we
+    // can just transparently convert _(_, $b) to $something(_, $b) and
+    // warn the user.
+
+    let needle = "{$b = getenv(_); _(_, $b);}";
+
+    let source = r#"
+    void displayHelp()
+    {
+        char *c = getenv("HOME");
+        int t;
+        endwin();
+        printf("%s\n",version);
+        printf("  Located in %s/.davrc\n",c);
+        printf("  Edit %s/.davrc to customize function key bindings\n",c);
+        initscr();
+        quit("");
+    }"#;
+
+    let results = parse_and_match_helper(needle, source, false);
+
+    assert_eq!(results.len(), 2);
 }
