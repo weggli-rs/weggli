@@ -385,7 +385,6 @@ impl QueryBuilder {
                 } else {
                     result += &t
                 }
-
             // Argument Lists for function calls
             } else if c.node().is_named() {
                 if anchoring {
@@ -393,6 +392,17 @@ impl QueryBuilder {
                 }
                 result += " ";
                 result += &self.build(c, depth + 1, strict_mode);
+            // Unnamed syntax nodes like {, ; or keywords.
+            } else {
+                let sexp = self.build(c, depth + 1, strict_mode);
+                // We want to highlight keywords in our search results so we add Display captures
+                if sexp.chars().all(|c| char::is_alphanumeric(c) || c == '"') {
+                    result += &format!(
+                        " {} @{}",
+                        sexp,
+                        &add_capture(&mut self.captures, Capture::Display)
+                    );
+                }
             }
 
             if !c.goto_next_sibling() {
