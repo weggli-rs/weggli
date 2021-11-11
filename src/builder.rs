@@ -344,6 +344,15 @@ impl QueryBuilder {
 
                 return format! {"(number_literal) @{}", &add_capture(&mut self.captures, capture)};
             }
+            "string_literal" => {
+                let pattern = self.get_text(&c.node());
+                let unquoted = &pattern[1..pattern.len()-1];
+
+                if unquoted.starts_with('$') {
+                    let c = Capture::Variable(unquoted.to_string());
+                    return format! {"(string_literal) @{}", &add_capture(&mut self.captures, c)};
+                }
+            }
             _ => (),
         }
 
@@ -396,7 +405,7 @@ impl QueryBuilder {
             } else {
                 let sexp = self.build(c, depth + 1, strict_mode);
                 // We want to highlight keywords in our search results so we add Display captures
-                if sexp.chars().all(|c| char::is_alphanumeric(c) || c == '"') {
+                if sexp.chars().all(|c| char::is_alphanumeric(c) || c == '"') && sexp!="\"\"\"" {
                     result += &format!(
                         " {} @{}",
                         sexp,

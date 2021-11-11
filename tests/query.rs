@@ -823,3 +823,19 @@ fn subexpression_with_multiple_args() {
 
     assert_eq!(results.len(), 2);
 }
+
+
+#[test]
+fn test_string_variable() {
+    let needle = r#"{printf("$x");}"#;
+    let source = r#"
+    void func()
+    {
+        printf("foo");
+        printf("bar");
+        printf(id);
+    }"#;
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 2);
+}
