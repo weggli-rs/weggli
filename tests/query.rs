@@ -839,3 +839,23 @@ fn test_string_variable() {
     let matches = parse_and_match_cpp(needle, source);
     assert_eq!(matches, 2);
 }
+
+#[test]
+fn test_display() {
+    let needle = r#"do {
+        $buf[_+_]=_;
+      } while(_);"#;
+
+    let source = r#"
+    void loop (char *b){
+        int i = 0;
+        do {
+            b[i+i] = 0;
+            i += 1;
+        } while (i < 10);
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 1);
+}

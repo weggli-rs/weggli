@@ -71,7 +71,7 @@ impl<'a, 'b> QueryResult {
         // TODO: We should just store the range of the header and always print it in full.
         let mut header_end = linebreak_index(source, self.function.start, 1, false);
 
-        if self.captures.len() > 1 {
+        if self.captures.len() > 1 && self.captures[1].range.start > self.function.start {
             // Ensure we don't overlap with the range of the next node.
             header_end = cmp::min(header_end, self.captures[1].range.start - 1);
         }
