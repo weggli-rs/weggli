@@ -859,3 +859,18 @@ fn test_display() {
     let matches = parse_and_match(needle, source);
     assert_eq!(matches, 1);
 }
+
+#[test]
+fn test_wildcard_stmt() {
+    let needle = r#"_;"#;
+
+    let source = r#"
+    void f (){
+        foo(x);
+        x = 10;
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 2);
+}

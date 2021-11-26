@@ -327,9 +327,14 @@ impl QueryBuilder {
             // we insert a sub query for the expression instead. This ensures that
             // we also match on x=func(x,y); or if (func(x,y))
             "expression_statement" => {
-                if !strict_mode || self.is_subexpr_wildcard(c.node().named_child(0).unwrap()) {
-                    c.goto_first_child();
-                    return self.build(c, depth, strict_mode);
+                if let Some(child) = c.node().named_child(0) {
+                    if !strict_mode || self.is_subexpr_wildcard(child) {
+                        // Don't unwrap `_;`
+                        if self.get_text(&child) != "_" {
+                            c.goto_first_child();
+                            return self.build(c, depth, strict_mode);
+                        }
+                    }
                 }
             }
             "number_literal" => {
@@ -346,7 +351,7 @@ impl QueryBuilder {
             }
             "string_literal" => {
                 let pattern = self.get_text(&c.node());
-                let unquoted = &pattern[1..pattern.len()-1];
+                let unquoted = &pattern[1..pattern.len() - 1];
 
                 if unquoted.starts_with('$') {
                     let c = Capture::Variable(unquoted.to_string());
@@ -405,7 +410,7 @@ impl QueryBuilder {
             } else {
                 let sexp = self.build(c, depth + 1, strict_mode);
                 // We want to highlight keywords in our search results so we add Display captures
-                if sexp.chars().all(|c| char::is_alphanumeric(c) || c == '"') && sexp!="\"\"\"" {
+                if sexp.chars().all(|c| char::is_alphanumeric(c) || c == '"') && sexp != "\"\"\"" {
                     result += &format!(
                         " {} @{}",
                         sexp,

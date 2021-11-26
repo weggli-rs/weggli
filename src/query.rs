@@ -210,8 +210,8 @@ impl<'a> QueryTree {
             .collect()
     }
 
-    // Process a single tree-sitter match and add all query results to the
-    // results vec. This function is responsible for running all subqueries,
+    // Process a single tree-sitter match and return all query results 
+    // This function is responsible for running all subqueries,
     // and veriyfing that negations don't match.
     fn process_match(
         &self,
