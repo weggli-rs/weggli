@@ -32,7 +32,6 @@ pub struct QueryTree {
     captures: Vec<Capture>,
     negations: Vec<NegativeQuery>,
     variables: HashSet<String>,
-    query_source: String,
     id: usize,
 }
 
@@ -63,7 +62,6 @@ impl<'a> QueryTree {
         captures: Vec<Capture>,
         variables: HashSet<String>,
         negations: Vec<NegativeQuery>,
-        query_source: String,
         id: usize,
     ) -> QueryTree {
         QueryTree {
@@ -71,7 +69,6 @@ impl<'a> QueryTree {
             captures,
             variables,
             negations,
-            query_source,
             id,
         }
     }

@@ -119,7 +119,6 @@ fn _build_query_tree(
         b.captures,
         variables,
         b.negations,
-        source.to_string(),
         id,
     )
 }
