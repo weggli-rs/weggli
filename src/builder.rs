@@ -464,7 +464,7 @@ impl QueryBuilder {
             "[ (type_identifier) (sized_type_specifier) (primitive_type)]".to_string()
         } else if kind == "identifier" && pattern.starts_with('$') {
             if self.cpp {
-                "[(identifier) (field_expression) (field_identifier) (scoped_identifier)]"
+                "[(identifier) (field_expression) (field_identifier) (scoped_identifier) (this)]"
                     .to_string()
             } else {
                 "[(identifier) (field_expression) (field_identifier)]".to_string()

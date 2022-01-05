@@ -874,3 +874,16 @@ fn test_wildcard_stmt() {
     let matches = parse_and_match(needle, source);
     assert_eq!(matches, 2);
 }
+
+#[test]
+fn test_this() {
+    let needle = r#"$this->x;"#;
+
+    let source = r#"
+    void foo::bar(foo *this){
+        this->x = 10;
+    }"#;
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+}
