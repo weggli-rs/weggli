@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+use std::collections::{hash_map::Keys, HashMap};
+
+use regex::Regex;
 use tree_sitter::{Language, Parser, Query, Tree};
 
 #[macro_use]
@@ -60,7 +63,7 @@ fn ts_query(sexpr: &str, cpp: bool) -> tree_sitter::Query {
         unsafe { tree_sitter_cpp() }
     };
 
-    match Query::new(language, &sexpr) {
+    match Query::new(language, sexpr) {
         Ok(q) => q,
         Err(e) => {
             eprintln!(
@@ -74,3 +77,25 @@ fn ts_query(sexpr: &str, cpp: bool) -> tree_sitter::Query {
     }
 }
 
+/// Map from variable names to a positive/negative regex constraint
+/// see --regex
+#[derive(Clone)]
+pub struct RegexMap(HashMap<String, (bool, Regex)>);
+
+impl RegexMap {
+    pub fn new(m: HashMap<String, (bool, Regex)>) -> RegexMap {
+        RegexMap(m)
+    }
+
+    pub fn variables(&self) -> Keys<String, (bool, Regex)> {
+        self.0.keys()
+    }
+
+    pub fn get(&self, variable: &str) -> Option<(bool, Regex)> {
+        if let Some((b, r)) = self.0.get(variable) {
+            Some((*b, r.to_owned()))
+        } else {
+            None
+        }
+    }
+}

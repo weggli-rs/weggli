@@ -78,7 +78,7 @@ impl<'a> QueryTree {
         let mut result = HashSet::new();
         for c in &self.captures {
             match c {
-                Capture::Variable(s) => {
+                Capture::Variable(s, _) => {
                     result.insert(s.to_string());
                 }
                 Capture::Subquery(t) => {
@@ -87,6 +87,10 @@ impl<'a> QueryTree {
                 }
                 _ => (),
             }
+        }
+
+        for neg in &self.negations {
+            result.extend(neg.qt.variables())
         }
 
         result
@@ -173,9 +177,9 @@ impl<'a> QueryTree {
                     let negative_results = neg.qt.match_internal(root, source, cache);
 
                     // check if any of its result are a valid match.
-                    let negative_match = negative_results.into_iter().any(|n| {
+                    negative_results.into_iter().any(|n| {
                         // check if the negative match `m` is consistent with our result
-                        if n.merge(&result, source, false).is_none() {
+                        if n.merge(result, source, false).is_none() {
                             return false;
                         }
 
@@ -196,10 +200,8 @@ impl<'a> QueryTree {
                             }
                         }
 
-                        return true;
-                    });
-
-                    negative_match
+                        true
+                    })
                 });
 
                 !negative_query_matched
@@ -207,7 +209,7 @@ impl<'a> QueryTree {
             .collect()
     }
 
-    // Process a single tree-sitter match and return all query results 
+    // Process a single tree-sitter match and return all query results
     // This function is responsible for running all subqueries,
     // and veriyfing that negations don't match.
     fn process_match(
@@ -237,7 +239,13 @@ impl<'a> QueryTree {
             }
 
             match capture {
-                Capture::Variable(s) => {
+                Capture::Variable(s, regex_constraint) => {
+                    if let Some((negative, regex)) = regex_constraint {
+                        let m = regex.is_match(&source[c.node.byte_range()]);
+                        if (m && *negative) || (!m && !*negative) {
+                            return vec![];
+                        }
+                    }
                     vars.insert(s.clone(), r.len() - 1);
                 }
                 Capture::Subquery(t) => {
@@ -305,7 +313,7 @@ impl<'a> QueryTree {
             .flat_map(move |r| {
                 sub_results
                     .iter()
-                    .filter_map(move |s| r.merge(&s, source, enforce_ordering))
+                    .filter_map(move |s| r.merge(s, source, enforce_ordering))
             })
             .collect()
     }

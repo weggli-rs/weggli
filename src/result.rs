@@ -217,7 +217,7 @@ pub fn merge_results(
         .flat_map(|r| {
             sub_results
                 .iter()
-                .filter_map(move |s| r.merge(&s, source, enforce_order))
+                .filter_map(move |s| r.merge(s, source, enforce_order))
         })
         .collect()
 }

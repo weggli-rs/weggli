@@ -32,6 +32,7 @@ use std::{collections::HashSet, fs};
 use std::{io::prelude::*, path::PathBuf};
 use tree_sitter::Tree;
 use walkdir::WalkDir;
+use weggli::RegexMap;
 
 use weggli::builder::build_query_tree;
 use weggli::query::QueryTree;
@@ -51,6 +52,19 @@ fn main() {
     // Keep track of all variables used in the input pattern(s)
     let mut variables = HashSet::new();
 
+    // Validate all regular expressions
+    let regex_constraints = process_regexes(&args.regexes).unwrap_or_else(|e| {
+        let msg = match e {
+            RegexError::InvalidArg(s) => format!(
+                "'{}' is not a valid argument of the form var=regex",
+                s.red()
+            ),
+            RegexError::InvalidRegex(s) => format!("Regex error {}", s),
+        };
+        eprintln!("{}", msg);
+        std::process::exit(1)
+    });
+
     // Normalize all patterns and translate them into QueryTrees
     // We also extract the identifiers at this point
     // to use them for file filtering later on.
@@ -61,7 +75,7 @@ fn main() {
         .pattern
         .iter()
         .map(|pattern| {
-            let qt = parse_search_pattern(pattern, args.cpp, args.force_query);
+            let qt = parse_search_pattern(pattern, args.cpp, args.force_query, &regex_constraints);
 
             let identifiers = qt.identifiers();
             variables.extend(qt.variables());
@@ -69,21 +83,12 @@ fn main() {
         })
         .collect();
 
-    // Verify that regular expressions only refer to existing variables
-    let regex_constraints = process_regexes(&variables, &args.regexes).unwrap_or_else(|e| {
-        let msg = match e {
-            RegexError::InvalidArg(s) => format!(
-                "'{}' is not a valid argument of the form var=regex",
-                s.red()
-            ),
-            RegexError::InvalidVariable(s) => {
-                format!("'{}' is not a valid query variable", s.red())
-            }
-            RegexError::InvalidRegex(s) => format!("Regex error {}", s),
-        };
-        eprintln!("{}", msg);
-        std::process::exit(1)
-    });
+    for v in regex_constraints.variables() {
+        if !variables.contains(v) {
+            eprintln!("'{}' is not a valid query variable", v.red());
+            std::process::exit(1)
+        }
+    }
 
     // Verify that the --include and --exclude regexes are valid.
     let helper_regex = |v: &[String]| -> Vec<Regex> {
@@ -156,7 +161,7 @@ fn main() {
         // on the results. For single query executions, we can
         // directly print any remaining matches. For multi
         // query runs we forward them to our next worker function
-        s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &regex_constraints, &args));
+        s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
 
         if w.len() > 1 {
             s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after));
@@ -179,14 +184,19 @@ const VALID_NODE_KINDS: &[&str] = &[
 /// We support some basic normalization (adding { } around queries) and store the normalized form
 /// in `normalized_patterns` to avoid lifetime issues.
 /// For invalid patterns, validate_query will cause a process exit with a human-readable error message
-fn parse_search_pattern(pattern: &String, is_cpp: bool, force_query: bool) -> QueryTree {
+fn parse_search_pattern(
+    pattern: &str,
+    is_cpp: bool,
+    force_query: bool,
+    regex_constraints: &RegexMap,
+) -> QueryTree {
     let mut tree = weggli::parse(pattern, is_cpp);
     let mut p = pattern;
 
     let temp_pattern;
 
     // Try to fix missing ';' at the end of a query.
-    // weggli 'memcpy(a,b,size)' should work. 
+    // weggli 'memcpy(a,b,size)' should work.
     if tree.root_node().has_error() {
         if !pattern.ends_with(';') {
             temp_pattern = format!("{};", &p);
@@ -218,9 +228,9 @@ fn parse_search_pattern(pattern: &String, is_cpp: bool, force_query: bool) -> Qu
         }
     }
 
-    let mut c = validate_query(&tree, &p, force_query);
+    let mut c = validate_query(&tree, p, force_query);
 
-    build_query_tree(&p, &mut c, is_cpp)
+    build_query_tree(p, &mut c, is_cpp, Some(regex_constraints.clone()))
 }
 
 /// Validates the user supplied search query and quits with an error message in case
@@ -301,33 +311,8 @@ fn validate_query<'a>(
     c
 }
 
-/// Map from variable names to a positive/negative regex constraint
-/// see --regex
-struct RegexMap(HashMap<String, (bool, Regex)>);
-
-impl RegexMap {
-    /// Returns true if the regex constraints in `self` allow the query result `m`
-    fn include_match(&self, m: &weggli::result::QueryResult, source: &str) -> bool {
-        if self.0.is_empty() {
-            return true;
-        }
-
-        let mut skip = false;
-        for (v, r) in &self.0 {
-            let value = m.value(&v, &source).unwrap();
-            skip = if r.1.is_match(value) { r.0 } else { !r.0 };
-
-            if skip {
-                break;
-            }
-        }
-        return !skip;
-    }
-}
-
 enum RegexError {
     InvalidArg(String),
-    InvalidVariable(String),
     InvalidRegex(regex::Error),
 }
 
@@ -337,13 +322,9 @@ impl From<regex::Error> for RegexError {
     }
 }
 
-/// Validate all passed regexes against the set of query variables.
-/// Returns an error if a regex for a non-existing variable is defined,
-/// or if an invalid regex is supplied otherwise return a RegexMap
-fn process_regexes(
-    variables: &HashSet<String>,
-    regexes: &[String],
-) -> Result<RegexMap, RegexError> {
+/// Validate all passed regexes and compile them.
+/// Returns an error if an invalid regex is supplied otherwise return a RegexMap
+fn process_regexes(regexes: &[String]) -> Result<RegexMap, RegexError> {
     let mut result = HashMap::new();
 
     for r in regexes {
@@ -362,14 +343,10 @@ fn process_regexes(
             normalized_var.pop(); // remove !
         }
 
-        if !variables.contains(&normalized_var) {
-            return Err(RegexError::InvalidVariable(var.to_string()));
-        }
-
         let regex = Regex::new(raw_regex)?;
         result.insert(normalized_var, (negative, regex));
     }
-    Ok(RegexMap(result))
+    Ok(RegexMap::new(result))
 }
 
 /// Recursively iterate through all files under `path` that match an ending listed in `extensions`
@@ -415,7 +392,7 @@ struct WorkItem {
 fn parse_files_worker(
     files: Vec<PathBuf>,
     sender: Sender<(Arc<String>, Tree, String)>,
-    work: &Vec<WorkItem>,
+    work: &[WorkItem],
     is_cpp: bool,
 ) {
     files
@@ -465,8 +442,7 @@ struct ResultsCtx {
 fn execute_queries_worker(
     receiver: Receiver<(Arc<String>, Tree, String)>,
     results_tx: Sender<ResultsCtx>,
-    work: &Vec<WorkItem>,
-    constraints: &RegexMap,
+    work: &[WorkItem],
     args: &cli::Args,
 ) {
     receiver.into_iter().par_bridge().for_each_with(
@@ -483,23 +459,14 @@ fn execute_queries_worker(
                         return;
                     }
 
-                    // Enforce RegEx constraints
-                    let check_constraints = |m: &QueryResult| constraints.include_match(m, &source);
-
                     // Enforce --unique
                     let check_unique = |m: &QueryResult| {
                         if args.unique {
                             let mut seen = HashSet::new();
-                            if !m
-                                .vars
+                            m.vars
                                 .keys()
                                 .map(|k| m.value(k, &source).unwrap())
                                 .all(|x| seen.insert(x))
-                            {
-                                false
-                            } else {
-                                true
-                            }
                         } else {
                             true
                         }
@@ -541,7 +508,6 @@ fn execute_queries_worker(
 
                     matches
                         .into_iter()
-                        .filter(check_constraints)
                         .filter(check_unique)
                         .filter(check_limit)
                         .for_each(process_match);
@@ -612,7 +578,7 @@ fn reset_signal_pipe_handler() {
 
         unsafe {
             let _ = signal::signal(signal::Signal::SIGPIPE, signal::SigHandler::SigDfl)
-                .map_err(|e| eprintln!("{}", e.to_string()));
+                .map_err(|e| eprintln!("{}", e));
         }
     }
 }

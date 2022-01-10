@@ -19,13 +19,19 @@ use std::collections::{HashMap, HashSet};
 use crate::capture::{add_capture, Capture};
 use crate::query::{NegativeQuery, QueryTree};
 use crate::util::parse_number_literal;
+use crate::RegexMap;
 use colored::Colorize;
 use tree_sitter::{Node, TreeCursor};
 
 /// Translate a parsed and validated input source (specified by `source` and `cursor`) into a `QueryTree`.
 /// When `is_cpp` is set, C++ specific features are enabled.
-pub fn build_query_tree(source: &str, cursor: &mut TreeCursor, is_cpp: bool) -> QueryTree {
-    _build_query_tree(source, cursor, 0, is_cpp, false, false)
+pub fn build_query_tree(
+    source: &str,
+    cursor: &mut TreeCursor,
+    is_cpp: bool,
+    regex_constraints: Option<RegexMap>,
+) -> QueryTree {
+    _build_query_tree(source, cursor, 0, is_cpp, false, false, regex_constraints)
 }
 
 fn _build_query_tree(
@@ -35,6 +41,7 @@ fn _build_query_tree(
     is_cpp: bool,
     is_multi_pattern: bool,
     strict_mode: bool,
+    regex_constraints: Option<RegexMap>,
 ) -> QueryTree {
     let mut b = QueryBuilder {
         query_source: source.to_string(),
@@ -42,6 +49,10 @@ fn _build_query_tree(
         negations: Vec::new(),
         id,
         cpp: is_cpp,
+        regex_constraints: match regex_constraints {
+            Some(r) => r,
+            None => RegexMap::new(HashMap::new()),
+        },
     };
 
     // Skip the root node if it's a translation_unit.
@@ -147,7 +158,7 @@ fn process_captures(
             Capture::Check(s) => {
                 sexp += &format!(r#"(#eq? @{} "{}")"#, (i + offset).to_string(), s);
             }
-            Capture::Variable(var) => {
+            Capture::Variable(var, _) => {
                 vars.entry(var.clone())
                     .or_insert_with(Vec::new)
                     .push(i + offset);
@@ -165,7 +176,7 @@ fn process_captures(
             let a = vec[0].to_string();
             for capture in vec.iter().skip(1) {
                 let b = capture.to_string();
-                sexp += &format!(r#"(#eq? @{} @{})"#, a.to_string(), b.to_string());
+                sexp += &format!(r#"(#eq? @{} @{})"#, a, b);
             }
         }
     }
@@ -180,6 +191,7 @@ struct QueryBuilder {
     negations: Vec<NegativeQuery>, // all negative sub queries (not: )
     id: usize,              // a globally unique ID used for caching results see `query.rs`
     cpp: bool,              // flag to enable C++ support
+    regex_constraints: RegexMap,
 }
 
 impl QueryBuilder {
@@ -245,7 +257,7 @@ impl QueryBuilder {
         // Anonymous nodes are string constants like "+" or "+=".
         // We can simply copy them into the query.
         if !c.node().is_named() {
-            return format!(r#""{}""#, c.node().kind().to_string());
+            return format!(r#""{}""#, c.node().kind());
         }
 
         let kind = c.node().kind();
@@ -305,6 +317,7 @@ impl QueryBuilder {
                     self.cpp,
                     true,
                     false, // limit strictness to current depth for now
+                    Some(self.regex_constraints.clone()),
                 )));
                 return "(compound_statement) @".to_string()
                     + &add_capture(&mut self.captures, capture);
@@ -353,7 +366,10 @@ impl QueryBuilder {
                 let unquoted = &pattern[1..pattern.len() - 1];
 
                 if unquoted.starts_with('$') {
-                    let c = Capture::Variable(unquoted.to_string());
+                    let c = Capture::Variable(
+                        unquoted.to_string(),
+                        self.regex_constraints.get(unquoted),
+                    );
                     return format! {"(string_literal) @{}", &add_capture(&mut self.captures, c)};
                 }
             }
@@ -371,7 +387,7 @@ impl QueryBuilder {
         let mut result = format!("({}", c.node().kind());
         if !c.goto_first_child() {
             if !c.node().is_named() {
-                return format!(r#""{}""#, c.node().kind().to_string());
+                return format!(r#""{}""#, c.node().kind());
             }
             return result + ")";
         }
@@ -445,6 +461,7 @@ impl QueryBuilder {
                 self.cpp,
                 false,
                 false, // TODO: should strict mode be supported in NOT queries?
+                Some(self.regex_constraints.clone()),
             )),
             previous_capture_index: before,
         });
@@ -473,7 +490,7 @@ impl QueryBuilder {
         };
 
         let capture = if pattern.starts_with('$') {
-            Capture::Variable(pattern.to_string())
+            Capture::Variable(pattern.to_string(), self.regex_constraints.get(pattern))
         } else {
             Capture::Check(pattern.to_string())
         };
@@ -481,7 +498,7 @@ impl QueryBuilder {
         result += " @";
         result += &add_capture(&mut self.captures, capture);
 
-        return result;
+        result
     }
 
     // Handle $foo() and _(). Returns None if the call does not need special handling.
@@ -518,6 +535,7 @@ impl QueryBuilder {
                 self.cpp,
                 false,
                 strict_mode,
+                Some(self.regex_constraints.clone()),
             )));
             return Some("_ @".to_string() + &add_capture(&mut self.captures, capture));
         }

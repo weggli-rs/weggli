@@ -28,7 +28,7 @@ fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> Vec<QueryRes
     println!("{}", source_tree.root_node().to_sexp());
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c, cpp);
+    let qt = build_query_tree(needle, &mut c, cpp, None);
 
     let matches = qt.matches(source_tree.root_node(), source);
 
@@ -199,7 +199,7 @@ fn identifiers() {
     let tree = weggli::parse(needle, false);
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c, false);
+    let qt = build_query_tree(needle, &mut c, false, None);
 
     let identifiers = qt.identifiers();
 

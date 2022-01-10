@@ -45,7 +45,7 @@ pub fn parse_number_literal(input: &str) -> Option<i128> {
 
     if let Ok(v) = value {
         if negative {
-            Some(v * -1)
+            Some(-v)
         } else {
             Some(v)
         }

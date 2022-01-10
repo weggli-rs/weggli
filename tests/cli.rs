@@ -168,3 +168,62 @@ fn invalid_utf8() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn regex_constraint() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("char $buf[10];")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rbuf=buf");
+    cmd.assert().success().stdout(predicate::str::contains(
+        "char buf[10]"));
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("char $buf[10];")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rbuf=foo");
+    cmd.assert().success().stdout(predicate::str::is_empty());
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("char $buf[10];")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rruf=foo");
+    cmd.assert().failure()
+    .stderr(predicate::str::contains("is not a valid query variable"));
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("char $buf[10];")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rbuf!=woof");
+    cmd.assert().success().stdout(predicate::str::contains(
+        "char buf[10]"));
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("{char buf[10]; not: memcpy($buf, _, _);}")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rbuf=woof");
+    cmd.assert().success().stdout(predicate::str::contains(
+        "char buf[10]"));
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("{char buf[10]; not: memcpy($buf, _, _);}")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rbuf=buf");
+    cmd.assert().success().stdout(predicate::str::is_empty());
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.arg("{char buf[10]; not: memcpy($buf, _, _);}")
+        .arg("./third_party/examples/invalid-utf8.c")
+        .arg("-Rbuf!=buf");
+    cmd.assert().success().stdout(predicate::str::contains(
+        "char buf[10]"));
+
+    Ok(())
+}
