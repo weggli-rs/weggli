@@ -480,7 +480,7 @@ impl QueryBuilder {
             "[ (type_identifier) (sized_type_specifier) (primitive_type)]".to_string()
         } else if kind == "identifier" && pattern.starts_with('$') {
             if self.cpp {
-                "[(identifier) (field_expression) (field_identifier) (scoped_identifier) (this)]"
+                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]"
                     .to_string()
             } else {
                 "[(identifier) (field_expression) (field_identifier)]".to_string()
@@ -556,7 +556,12 @@ impl QueryBuilder {
                 } else {
                     if self.cpp {
                         format! {"[(field_expression field: (field_identifier){0})
-                        (scoped_identifier name: (identifier){0}) (identifier) {0}]",capture_str}
+                        (qualified_identifier name: (identifier){0}) 
+                        (qualified_identifier name: (qualified_identifier (identifier){0})) 
+                        (qualified_identifier name: (qualified_identifier (qualified_identifier (identifier){0}))) 
+                        (qualified_identifier name: (qualified_identifier (qualified_identifier 
+                            (qualified_identifier (identifier){0})))) 
+                        (identifier) {0}]",capture_str}
                     } else {
                         format! {"[(field_expression field: (field_identifier){0})
                         (identifier) {0}]",capture_str}

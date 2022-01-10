@@ -19,21 +19,21 @@ extern crate cc;
 fn main() {
     cc::Build::new()
         .include("third_party/grammars/")
-        .file("third_party/grammars/c/parser.c")
+        .file("third_party/grammars/weggli-c/src/parser.c")
         .flag("-std=c99")
         .flag("-w")
         .compile("tree-sitter-c");
 
     cc::Build::new()
         .cpp(true)
-        .include("third_party/grammars")
-        .file("third_party/grammars/cpp/scanner.cc")
+        .include("third_party/grammars/")
+        .file("third_party/grammars/weggli-cpp/src/scanner.cc")
         .flag("-w")
         .compile("tree-sitter-cpp-scanner");
 
     cc::Build::new()
-        .include("third_party/grammars")
-        .file("third_party/grammars/cpp/parser.c")
+        .include("third_party/grammars/")
+        .file("third_party/grammars/weggli-cpp/src/parser.c")
         .flag("-w")
         .compile("tree-sitter-cpp-parser");
 }

@@ -136,15 +136,13 @@ impl<'a> QueryTree {
     fn match_internal(&self, root: Node, source: &str, cache: &mut Cache) -> Vec<QueryResult> {
         let mut qc = tree_sitter::QueryCursor::new();
 
-        let text_callback = |n: Node| &source[n.byte_range()];
-
         let num_patterns = self.query.pattern_count();
         let mut pattern_results = Vec::with_capacity(num_patterns + 1);
         for _ in 0..num_patterns {
             pattern_results.push(Vec::new());
         }
 
-        for m in qc.matches(&self.query, root, text_callback) {
+        for m in qc.matches(&self.query, root, source.as_bytes()) {
             // Process the query match, run subqueries and store the final QueryResults in pattern_results
             pattern_results[m.pattern_index].extend(self.process_match(cache, source, &m));
         }

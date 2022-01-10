@@ -17,7 +17,7 @@ crate-type = ["rlib", "dylib"]
 name = "weggli"
 
 [dependencies]
-tree-sitter = "0.19.2"
+tree-sitter = "0.20.2"
 log = "0.4.11"
 clap = "2.33.3"
 walkdir = "2.3.1"

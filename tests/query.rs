@@ -552,7 +552,7 @@ fn func_calls() {
     void foo() {
         std::memcpy(a,b,c);
         memcpy(a,b,c);
-        a::b::c::d::e::memcpy(a,b,c);
+        b::c::d::e::memcpy(a,b,c);
         a->func(a,b,c);
       }
     "#;
@@ -882,6 +882,19 @@ fn test_this() {
     let source = r#"
     void foo::bar(foo *this){
         this->x = 10;
+    }"#;
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+}
+
+#[test]
+fn test_qualified_identifier() {
+    let needle = r#"_::var = 10"#;
+
+    let source = r#"
+    void foo::bar(foo *this){
+        foo::var = 10;
     }"#;
 
     let matches = parse_and_match_cpp(needle, source);
