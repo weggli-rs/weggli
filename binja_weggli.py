@@ -10,8 +10,28 @@ def get_function(name):
 	return None
 
 
-def decompile(f):
-    return str(f.hlil)
+def decompile(func):
+    Settings().set_string('rendering.hlil.scopingStyle', 'bracesNewLine')
+    settings = DisassemblySettings()
+    settings.set_option(DisassemblyOption.ShowAddress, False)	
+    settings.set_option(DisassemblyOption.WaitForIL, True)
+    
+    obj = lineardisassembly.LinearViewObject.language_representation(bv, settings)
+    cursor_end = lineardisassembly.LinearViewCursor(obj)
+    cursor_end.seek_to_address(func.highest_address)
+    end_lines = bv.get_next_linear_disassembly_lines(cursor_end)
+    cursor_end.seek_to_address(func.highest_address)
+    start_lines = bv.get_previous_linear_disassembly_lines(cursor_end)
+    lines = start_lines + end_lines
+    
+    return "\n".join(
+        "".join(
+            str(token)
+            for token in line.contents.tokens
+            if token.type != InstructionTextTokenType.TagToken
+        )
+        for line in lines
+    )
 
 
 def xrefs_to(f):
