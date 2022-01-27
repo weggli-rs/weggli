@@ -1,11 +1,12 @@
 import unittest
 import weggli
 import typing
+import os
 
 
-def parse_and_match(query, code) -> typing.List[str]:
+def parse_and_match(query, code, color=False) -> typing.List[str]:
     qt = weggli.parse_query(query)
-    return [weggli.display(r, code) for r in weggli.matches(qt, code)]
+    return [weggli.display(r, code, color) for r in weggli.matches(qt, code)]
 
 
 class TestPythonBindings(unittest.TestCase):
@@ -15,8 +16,18 @@ class TestPythonBindings(unittest.TestCase):
         )
         self.assertEqual(
             results,
+            ["void foo() {int bar=10+foo+bar;}"],
+        )
+
+    def test_color(self):
+        results = parse_and_match(
+            "{int $a = _+foo+$a;}", "void foo() {int bar=10+foo+bar;}", color=True
+        )
+        self.assertEqual(
+            results,
             [
-                "void foo() {\x1b[31mint\x1b[0m \x1b[31mbar\x1b[0m=10+\x1b[31mfoo\x1b[0m+\x1b[31mbar\x1b[0m;}"
+                "void foo() {\x1b[31mint\x1b[0m "
+                "\x1b[31mbar\x1b[0m=10+\x1b[31mfoo\x1b[0m+\x1b[31mbar\x1b[0m;}"
             ],
         )
 

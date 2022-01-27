@@ -55,10 +55,14 @@ fn matches(p: &QueryTreePy, source: &str) -> PyResult<Vec<QueryResultPy>> {
     Ok(r)
 }
 
-#[pyfunction]
-fn display(p: &QueryResultPy, source: &str) -> PyResult<String> {
+#[pyfunction(color = "None")]
+#[text_signature = "(q, source, color)"]
+fn display(p: &QueryResultPy, source: &str, color: Option<bool>) -> PyResult<String> {
+    if let Some(color_override) = color {
+        colored::control::set_override(color_override);
+    }
     let r = p.qr.display(source, 10, 10);
-    println!("{}", r.as_bytes().len());
+    colored::control::unset_override();
     Ok(r)
 }
 
