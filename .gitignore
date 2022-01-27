@@ -1,1 +1,8 @@
 /target
+
+__pycache__
+*.py[cod]
+*.egg-info
+*.so
+/env/
+/dist/
