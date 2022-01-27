@@ -4,9 +4,9 @@ import typing
 import os
 
 
-def parse_and_match(query, code, color=False) -> typing.List[str]:
-    qt = weggli.parse_query(query)
-    return [weggli.display(r, code, color) for r in weggli.matches(qt, code)]
+def parse_and_match(query, code, cpp=False, color=False) -> typing.List[str]:
+    qt = weggli.parse_query(query, cpp)
+    return [weggli.display(r, code, color) for r in weggli.matches(qt, code, cpp)]
 
 
 class TestPythonBindings(unittest.TestCase):
@@ -36,3 +36,24 @@ class TestPythonBindings(unittest.TestCase):
         tree = weggli.parse_query(needle)
         identifiers = weggli.identifiers(tree)
         self.assertEqual(identifiers, ["int", "x", "func", "bar", "xonk", "foo"])
+
+    def test_cpp(self):
+        code = """
+        #include <iostream>\n
+        int main() {
+        std::cout << "Hello World!";
+        return 0;
+        }
+        """
+        results = parse_and_match(
+            "_ $func() {std::cout << _;}", code, cpp=True, color=False
+        )
+        self.assertEqual(
+            results,
+            [
+                "int main() {\n"
+                '        std::cout << "Hello World!";\n'
+                "        return 0;\n"
+                "        }"
+            ],
+        )
