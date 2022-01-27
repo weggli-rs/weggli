@@ -30,23 +30,26 @@ struct QueryResultPy {
     qr: QueryResult,
 }
 
-#[pyfunction]
-fn parse_query(q: &str) -> PyResult<QueryTreePy> {
-    let tree = crate::parse(q, false);
+#[pyfunction(cpp = "false")]
+#[text_signature = "(query, cpp)"]
+fn parse_query(q: &str, cpp: bool) -> PyResult<QueryTreePy> {
+    let tree = crate::parse(q, cpp);
     let mut c = tree.walk();
 
-    let qt = crate::builder::build_query_tree(q, &mut c, false, None);
+    let qt = crate::builder::build_query_tree(q, &mut c, cpp, None);
     Ok(QueryTreePy { qt })
 }
 
 #[pyfunction]
+#[text_signature = "(p)"]
 fn identifiers(p: &QueryTreePy) -> PyResult<Vec<String>> {
     Ok(p.qt.identifiers())
 }
 
-#[pyfunction]
-fn matches(p: &QueryTreePy, source: &str) -> PyResult<Vec<QueryResultPy>> {
-    let source_tree = crate::parse(source, false);
+#[pyfunction(cpp = "false")]
+#[text_signature = "(p, source, cpp)"]
+fn matches(p: &QueryTreePy, source: &str, cpp: bool) -> PyResult<Vec<QueryResultPy>> {
+    let source_tree = crate::parse(source, cpp);
 
     let matches = p.qt.matches(source_tree.root_node(), source);
 
