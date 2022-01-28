@@ -19,7 +19,7 @@ name = "weggli"
 [dependencies]
 tree-sitter = "0.20.9"
 log = "0.4.17"
-clap = "2.34.0"
+clap = "^3.0.13"
 walkdir = "2.3.2"
 rayon = "1.5.3"
 colored = "2.0.0"
