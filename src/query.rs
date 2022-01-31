@@ -216,6 +216,7 @@ impl<'a> QueryTree {
         source: &str,
         m: &tree_sitter::QueryMatch,
     ) -> Vec<QueryResult> {
+        return vec![]
         let mut r = Vec::with_capacity(m.captures.len());
         let mut vars: FxHashMap<String, usize> =
             FxHashMap::with_capacity_and_hasher(self.variables.len(), Default::default());
