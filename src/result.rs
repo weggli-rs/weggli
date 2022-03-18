@@ -26,7 +26,7 @@ use rustc_hash::FxHashMap;
 #[derive(Debug, Eq, PartialEq)]
 pub struct QueryResult {
     // for each captured node we store the offset ranges of its src location
-    captures: Vec<CaptureResult>,
+    pub captures: Vec<CaptureResult>,
     // Mapping from Variables to index in `captures`
     pub vars: FxHashMap<String, usize>,
     // Range of the outermost node. This is badly named as it does not have to be a
