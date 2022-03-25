@@ -65,7 +65,9 @@ impl<'a, 'b> QueryResult {
     /// Returns a colored String representation of the result with `before` + `after`
     /// context lines around each captured node.
     pub fn display(&self, source: &'b str, before: usize, after: usize) -> String {
-        let mut result = String::new();
+        // Experiments show that results are roughly between 300 and 700 characters long
+        // so pre-allocating a string that is 1024 bytes long should be enough.
+        let mut result = String::with_capacity(1024);
 
         // Add two lines of the function header
         // TODO: We should just store the range of the header and always print it in full.
