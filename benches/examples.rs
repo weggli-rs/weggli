@@ -23,7 +23,7 @@ fn run_query(s: &(tree_sitter::Tree, String), pattern: &str) {
 
     let mut c = tree.walk();
     c.goto_first_child();
-    let qt = weggli::builder::build_query_tree(pattern, &mut c, false);
+    let qt = weggli::builder::build_query_tree(pattern, &mut c, false, None);
 
     let matches = qt.matches(s.0.root_node(), &s.1);
     for m in matches {
