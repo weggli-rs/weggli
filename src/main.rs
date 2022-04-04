@@ -83,6 +83,12 @@ fn main() {
                 }
                 Err(msg) => {
                     eprintln!("{}", msg);
+                    if !args.cpp
+                        && parse_search_pattern(pattern, true, args.force_query, &regex_constraints)
+                            .is_ok()
+                    {
+                        eprintln!("{} This query is valid in C++ mode (-X)", "Note:".bold());
+                    }
                     std::process::exit(1);
                 }
             }
