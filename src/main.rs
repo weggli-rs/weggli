@@ -75,11 +75,17 @@ fn main() {
         .pattern
         .iter()
         .map(|pattern| {
-            let qt = parse_search_pattern(pattern, args.cpp, args.force_query, &regex_constraints);
-
-            let identifiers = qt.identifiers();
-            variables.extend(qt.variables());
-            WorkItem { qt, identifiers }
+            match parse_search_pattern(pattern, args.cpp, args.force_query, &regex_constraints) {
+                Ok(qt) => {
+                    let identifiers = qt.identifiers();
+                    variables.extend(qt.variables());
+                    WorkItem { qt, identifiers }
+                }
+                Err(msg) => {
+                    eprintln!("{}", msg);
+                    std::process::exit(1);
+                }
+            }
         })
         .collect();
 
@@ -189,7 +195,7 @@ fn parse_search_pattern(
     is_cpp: bool,
     force_query: bool,
     regex_constraints: &RegexMap,
-) -> QueryTree {
+) -> Result<QueryTree, String> {
     let mut tree = weggli::parse(pattern, is_cpp);
     let mut p = pattern;
 
@@ -228,9 +234,14 @@ fn parse_search_pattern(
         }
     }
 
-    let mut c = validate_query(&tree, p, force_query);
+    let mut c = validate_query(&tree, p, force_query)?;
 
-    build_query_tree(p, &mut c, is_cpp, Some(regex_constraints.clone()))
+    Ok(build_query_tree(
+        p,
+        &mut c,
+        is_cpp,
+        Some(regex_constraints.clone()),
+    ))
 }
 
 /// Validates the user supplied search query and quits with an error message in case
@@ -241,9 +252,9 @@ fn validate_query<'a>(
     tree: &'a tree_sitter::Tree,
     query: &str,
     force: bool,
-) -> tree_sitter::TreeCursor<'a> {
+) -> Result<tree_sitter::TreeCursor<'a>, String> {
     if tree.root_node().has_error() && !force {
-        eprint!("{}", "Error! Query parsing failed:".red().bold());
+        let mut errmsg = format!("{}", "Error! Query parsing failed:".red().bold());
         let mut cursor = tree.root_node().walk();
 
         let mut first_error = None;
@@ -262,26 +273,26 @@ fn validate_query<'a>(
         }
 
         if let Some(node) = first_error {
-            eprint!(" {}", &query[0..node.start_byte()].italic());
+            errmsg.push_str(&format!(" {}", &query[0..node.start_byte()].italic()));
             if node.is_missing() {
-                eprint!(
+                errmsg.push_str(&format!(
                     "{}{}{}",
                     " [MISSING ".red(),
                     node.kind().red().bold(),
                     " ] ".red()
-                );
+                ));
             }
-            eprint!(
-                "{}",
+            errmsg.push_str(&format!(
+                "{}{}",
                 &query[node.start_byte()..node.end_byte()]
                     .red()
                     .italic()
-                    .bold()
-            );
-            eprintln!("{}", &query[node.end_byte()..].italic());
+                    .bold(),
+                &query[node.end_byte()..].italic()
+            ));
         }
 
-        std::process::exit(1);
+        return Err(errmsg);
     }
 
     info!("query sexp: {}", tree.root_node().to_sexp());
@@ -289,26 +300,24 @@ fn validate_query<'a>(
     let mut c = tree.walk();
 
     if c.node().named_child_count() > 1 {
-        eprintln!(
+        return Err(format!(
             "{}'{}' query contains multiple root nodes",
             "Error: ".red(),
             query
-        );
-        std::process::exit(1);
+        ));
     }
 
     c.goto_first_child();
 
     if !VALID_NODE_KINDS.contains(&c.node().kind()) {
-        eprintln!(
+        return Err(format!(
             "{}'{}' is not a supported query root node.",
             "Error: ".red(),
             query
-        );
-        std::process::exit(1);
+        ));
     }
 
-    c
+    Ok(c)
 }
 
 enum RegexError {
