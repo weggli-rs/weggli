@@ -900,3 +900,23 @@ fn test_qualified_identifier() {
     let matches = parse_and_match_cpp(needle, source);
     assert_eq!(matches, 1);
 }
+
+
+#[test]
+fn test_sizeof() {
+    let needle = r#"{ _ = _(a) + _; }"#;
+
+    let source = r#"
+    int test_sizeof() {
+        int b;
+        a = sizeof(a) + b;
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 1);
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+
+}

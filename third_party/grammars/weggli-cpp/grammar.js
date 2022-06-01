@@ -4,7 +4,6 @@ module.exports = grammar(CPP, {
   name: 'cpp',
 
   rules: {
-    identifier: $ => /[\$a-zA-Z_]\w*/,
-
+    identifier: $ => /[\$a-zA-Z_]\w*/
   }
 });

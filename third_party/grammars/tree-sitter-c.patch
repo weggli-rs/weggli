@@ -1,0 +1,25 @@
+diff --git a/grammar.js b/grammar.js
+index d0435a2..1368a95 100644
+--- a/grammar.js
++++ b/grammar.js
+@@ -10,15 +10,15 @@ const PREC = {
+   BITWISE_AND: 5,
+   EQUAL: 6,
+   RELATIONAL: 7,
+-  SIZEOF: 8,
+   SHIFT: 9,
+   ADD: 10,
+   MULTIPLY: 11,
+   CAST: 12,
+-  UNARY: 13,
+-  CALL: 14,
+-  FIELD: 15,
+-  SUBSCRIPT: 16
++  SIZEOF: 13,
++  UNARY: 14,
++  CALL: 15,
++  FIELD: 16,
++  SUBSCRIPT: 17
+ };
+ 
+ module.exports = grammar({
