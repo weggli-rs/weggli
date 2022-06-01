@@ -338,13 +338,35 @@ impl QueryBuilder {
             // When the query contains an expression statement (e.g "func(x,y);")
             // we insert a sub query for the expression instead. This ensures that
             // we also match on x=func(x,y); or if (func(x,y))
+            // We can't unwrap the expression statements in all cases so make sure
+            // the parent node is either a compound statement, a TU or one of our
+            // two "magic" labels. 
             "expression_statement" => {
                 if let Some(child) = c.node().named_child(0) {
-                    if !strict_mode || self.is_subexpr_wildcard(child) {
-                        // Don't unwrap `_;`
-                        if self.get_text(&child) != "_" {
+                    if let Some(p) = c.node().parent() {
+                        if [
+                            "compound_statement",
+                            "labeled_statement",
+                            "translation_unit",
+                        ]
+                        .contains(&p.kind())
+                        {
+                            let mut unwrap = !strict_mode || self.is_subexpr_wildcard(child);
+                            if p.kind() == "labeled_statement" {
+                                let l = p.child(0).unwrap();
+                                let label = self.get_text(&l).to_uppercase();
+                                if label != "NOT" && label != "STRICT" {
+                                    unwrap = false;
+                                }
+                            }
+                            if self.get_text(&child) == "_" {
+                                unwrap = false
+                            }
+
+                            if unwrap {
                             c.goto_first_child();
                             return self.build(c, depth, strict_mode);
+                            }
                         }
                     }
                 }
