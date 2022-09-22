@@ -156,7 +156,7 @@ fn process_captures(
         match c {
             Capture::Display => (),
             Capture::Check(s) => {
-                sexp += &format!(r#"(#eq? @{} "{}")"#, (i + offset).to_string(), s);
+                sexp += &format!(r#"(#eq? @{} "{}")"#, (i + offset), s);
             }
             Capture::Variable(var, _) => {
                 vars.entry(var.clone())
@@ -331,16 +331,17 @@ impl QueryBuilder {
             | "namespace_identifier" => return self.build_identifier(c),
             "assignment_expression" => return self.build_assignment(c, depth, strict_mode),
             // Function calls (including wildcards)
-            "call_expression" => match self.build_call_expr(c, depth, strict_mode) {
-                Some(s) => return s,
-                _ => (),
-            },
+            "call_expression" => {
+                if let Some(s) = self.build_call_expr(c, depth, strict_mode) {
+                    return s;
+                }
+            }
             // When the query contains an expression statement (e.g "func(x,y);")
             // we insert a sub query for the expression instead. This ensures that
             // we also match on x=func(x,y); or if (func(x,y))
             // We can't unwrap the expression statements in all cases so make sure
             // the parent node is either a compound statement, a TU or one of our
-            // two "magic" labels. 
+            // two "magic" labels.
             "expression_statement" => {
                 if let Some(child) = c.node().named_child(0) {
                     if let Some(p) = c.node().parent() {
@@ -364,8 +365,8 @@ impl QueryBuilder {
                             }
 
                             if unwrap {
-                            c.goto_first_child();
-                            return self.build(c, depth, strict_mode);
+                                c.goto_first_child();
+                                return self.build(c, depth, strict_mode);
                             }
                         }
                     }
@@ -575,19 +576,17 @@ impl QueryBuilder {
 
                 let fs = if strict_mode {
                     format! {"(identifier) {}",capture_str}
-                } else {
-                    if self.cpp {
-                        format! {"[(field_expression field: (field_identifier){0})
+                } else if self.cpp {
+                    format! {"[(field_expression field: (field_identifier){0})
                         (qualified_identifier name: (identifier){0}) 
                         (qualified_identifier name: (qualified_identifier (identifier){0})) 
                         (qualified_identifier name: (qualified_identifier (qualified_identifier (identifier){0}))) 
                         (qualified_identifier name: (qualified_identifier (qualified_identifier 
                             (qualified_identifier (identifier){0})))) 
                         (identifier) {0}]",capture_str}
-                    } else {
-                        format! {"[(field_expression field: (field_identifier){0})
-                        (identifier) {0}]",capture_str}
-                    }
+                } else {
+                    format! {"[(field_expression field: (field_identifier){0})
+                    (identifier) {0}]",capture_str}
                 };
 
                 let result = format! {"(call_expression function: {} arguments: {})", fs, a};
@@ -627,6 +626,6 @@ impl QueryBuilder {
                         (init_declarator declarator:(pointer_declarator declarator: {0}) value: {1})]", left,right}
         };
         c.goto_parent();
-        return result;
+        result
     }
 }

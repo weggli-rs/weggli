@@ -797,7 +797,7 @@ fn test_strict_calls() {
 fn subexpression_with_multiple_args() {
     // https://github.com/googleprojectzero/weggli/issues/14
 
-    // An unfortunate effect of our sub expression syntax _($x) is 
+    // An unfortunate effect of our sub expression syntax _($x) is
     // that people might wrongly use it as a wildcard function call
     // _($a, $b). This doesn't work (you want to use $fn($a,$b) instead).
     // As we don't support sub expressions with multiple arguments, we
@@ -823,7 +823,6 @@ fn subexpression_with_multiple_args() {
 
     assert_eq!(results.len(), 2);
 }
-
 
 #[test]
 fn test_string_variable() {
@@ -901,7 +900,6 @@ fn test_qualified_identifier() {
     assert_eq!(matches, 1);
 }
 
-
 #[test]
 fn test_sizeof() {
     let needle = r#"{ _ = _(a) + _; }"#;
@@ -918,5 +916,4 @@ fn test_sizeof() {
 
     let matches = parse_and_match_cpp(needle, source);
     assert_eq!(matches, 1);
-
 }
