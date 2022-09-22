@@ -31,7 +31,7 @@ struct QueryResultPy {
 }
 
 #[pyfunction(cpp = "false")]
-#[text_signature = "(query, cpp)"]
+#[pyo3(text_signature = "(query, cpp)")]
 fn parse_query(q: &str, cpp: bool) -> PyResult<QueryTreePy> {
     let tree = crate::parse(q, cpp);
     let mut c = tree.walk();
@@ -41,13 +41,13 @@ fn parse_query(q: &str, cpp: bool) -> PyResult<QueryTreePy> {
 }
 
 #[pyfunction]
-#[text_signature = "(p)"]
+#[pyo3(text_signature = "(p)")]
 fn identifiers(p: &QueryTreePy) -> PyResult<Vec<String>> {
     Ok(p.qt.identifiers())
 }
 
 #[pyfunction(cpp = "false")]
-#[text_signature = "(p, source, cpp)"]
+#[pyo3(text_signature = "(p, source, cpp)")]
 fn matches(p: &QueryTreePy, source: &str, cpp: bool) -> PyResult<Vec<QueryResultPy>> {
     let source_tree = crate::parse(source, cpp);
 
@@ -59,7 +59,7 @@ fn matches(p: &QueryTreePy, source: &str, cpp: bool) -> PyResult<Vec<QueryResult
 }
 
 #[pyfunction(color = "None")]
-#[text_signature = "(q, source, color)"]
+#[pyo3(text_signature = "(q, source, color)")]
 fn display(p: &QueryResultPy, source: &str, color: Option<bool>) -> PyResult<String> {
     if let Some(color_override) = color {
         colored::control::set_override(color_override);
