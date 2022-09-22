@@ -1,22 +1,22 @@
 /*
- Copyright 2021 Google LLC
+Copyright 2021 Google LLC
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-      https://www.apache.org/licenses/LICENSE-2.0
+     https://www.apache.org/licenses/LICENSE-2.0
 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
- */
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
-use std::{path::{Path, PathBuf}};
 use clap::{App, Arg};
 use simplelog::*;
+use std::path::{Path, PathBuf};
 
 pub struct Args {
     pub path: PathBuf,
@@ -249,17 +249,16 @@ pub fn parse_arguments() -> Args {
     }
 }
 
-
 mod help {
- pub const ABOUT: &str = "\
+    pub const ABOUT: &str = "\
  weggli is a semantic search tool for C and C++ codebases.
  It is designed to quickly find interesting code pattern in large codebases.
  
  Use -h for short descriptions and --help for more details.
  
  Homepage: https://github.com/googleprojectzero/weggli";
- 
- pub const TEMPLATE: &str = "\
+
+    pub const TEMPLATE: &str = "\
  {bin} {version}
  {author}
  
@@ -272,8 +271,8 @@ mod help {
  
  OPTIONS:
  {unified}";
- 
- pub const PATTERN: &str = "\
+
+    pub const PATTERN: &str = "\
  A weggli search pattern. weggli's query language closely resembles
  C and C++ with a small number of extra features.
  
@@ -316,8 +315,8 @@ strict:   Enable stricter matching. This turns off statement unwrapping and gree
  Additional patterns can be specified using the --pattern (-p) option. This makes
  it possible to search across functions or type definitions.
  ";
- 
- pub const PATH: &str = "\
+
+    pub const PATH: &str = "\
  Input directory or file to search. By default, weggli will search inside 
  .c and .h files for the default C mode or .cc, .cpp, .cxx, .h and .hpp files when
  executing in C++ mode (using the --cpp option).
@@ -327,8 +326,8 @@ strict:   Enable stricter matching. This turns off statement unwrapping and gree
  files can also be specified via STDIN by setting the directory to '-' 
  and piping a list of filenames.
  ";
- 
- pub const REGEX: &str = "\
+
+    pub const REGEX: &str = "\
  Filter variable matches based on a regular expression. 
  This feature uses the Rust regex crate, so most Perl-style
  regular expression features are supported.
@@ -342,8 +341,8 @@ strict:   Enable stricter matching. This turns off statement unwrapping and gree
  Find memcpy calls where the last argument is NOT named 'size':
  weggli -R 's!=^size$' 'memcpy(_,_,$s);' 
  ";
- 
- pub const UNIQUE: &str = "\
+
+    pub const UNIQUE: &str = "\
  Enforce uniqueness of variable matches.
  By default, two variables such as $a and $b can match on identical values.
  For example, the query '$x=malloc($a); memcpy($x, _, $b);' would
@@ -359,4 +358,4 @@ strict:   Enable stricter matching. This turns off statement unwrapping and gree
  
  Using the unique flag would filter out the first match as $a==$b.
  ";
-} 
+}

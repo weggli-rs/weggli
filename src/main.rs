@@ -209,15 +209,13 @@ fn parse_search_pattern(
 
     // Try to fix missing ';' at the end of a query.
     // weggli 'memcpy(a,b,size)' should work.
-    if tree.root_node().has_error() {
-        if !pattern.ends_with(';') {
-            temp_pattern = format!("{};", &p);
-            let fixed_tree = weggli::parse(&temp_pattern, is_cpp);
-            if !fixed_tree.root_node().has_error() {
-                info!("normalizing query: add missing ;");
-                tree = fixed_tree;
-                p = &temp_pattern;
-            }
+    if tree.root_node().has_error() && !pattern.ends_with(';') {
+        temp_pattern = format!("{};", &p);
+        let fixed_tree = weggli::parse(&temp_pattern, is_cpp);
+        if !fixed_tree.root_node().has_error() {
+            info!("normalizing query: add missing ;");
+            tree = fixed_tree;
+            p = &temp_pattern;
         }
     }
 
