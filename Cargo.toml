@@ -17,26 +17,26 @@ crate-type = ["rlib", "dylib"]
 name = "weggli"
 
 [dependencies]
-tree-sitter = "0.20.2"
-log = "0.4.11"
-clap = "2.33.3"
-walkdir = "2.3.1"
-rayon = "1.5.1"
+tree-sitter = "0.20.9"
+log = "0.4.17"
+clap = "2.34.0"
+walkdir = "2.3.2"
+rayon = "1.5.3"
 colored = "2.0.0"
-simplelog = "0.10.0"
+simplelog = "0.12.0"
 regex = "1"
 rustc-hash = "1.1.0"
 
 [dependencies.pyo3]
-version = "0.13.0"
+version = "0.17.1"
 features = ["extension-module"]
 optional = true
 
 [target.'cfg(target_family = "unix")'.dependencies]
-nix = "0.17.0"
+nix = "0.25.0"
 
 [build-dependencies]
-cc = "1.0.65"
+cc = "1.0.73"
 
 [dev-dependencies]
 criterion = {version = "0.3",features = ["html_reports"]}
