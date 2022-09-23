@@ -32,7 +32,7 @@ use std::{collections::HashSet, fs};
 use std::{io::prelude::*, path::PathBuf};
 use tree_sitter::Tree;
 use walkdir::WalkDir;
-use weggli::RegexMap;
+use weggli::{QueryError, RegexMap};
 
 use weggli::builder::build_query_tree;
 use weggli::query::QueryTree;
@@ -81,8 +81,8 @@ fn main() {
                     variables.extend(qt.variables());
                     WorkItem { qt, identifiers }
                 }
-                Err(msg) => {
-                    eprintln!("{}", msg);
+                Err(qe) => {
+                    eprintln!("{}", qe.message);
                     if !args.cpp
                         && parse_search_pattern(pattern, true, args.force_query, &regex_constraints)
                             .is_ok()
@@ -195,13 +195,12 @@ const VALID_NODE_KINDS: &[&str] = &[
 /// `is_cpp` enables C++ mode. `force_query` can be used to allow queries with syntax errors.
 /// We support some basic normalization (adding { } around queries) and store the normalized form
 /// in `normalized_patterns` to avoid lifetime issues.
-/// For invalid patterns, validate_query will cause a process exit with a human-readable error message
 fn parse_search_pattern(
     pattern: &str,
     is_cpp: bool,
     force_query: bool,
     regex_constraints: &RegexMap,
-) -> Result<QueryTree, String> {
+) -> Result<QueryTree, QueryError> {
     let mut tree = weggli::parse(pattern, is_cpp);
     let mut p = pattern;
 
@@ -209,15 +208,13 @@ fn parse_search_pattern(
 
     // Try to fix missing ';' at the end of a query.
     // weggli 'memcpy(a,b,size)' should work.
-    if tree.root_node().has_error() {
-        if !pattern.ends_with(';') {
-            temp_pattern = format!("{};", &p);
-            let fixed_tree = weggli::parse(&temp_pattern, is_cpp);
-            if !fixed_tree.root_node().has_error() {
-                info!("normalizing query: add missing ;");
-                tree = fixed_tree;
-                p = &temp_pattern;
-            }
+    if tree.root_node().has_error() && !pattern.ends_with(';') {
+        temp_pattern = format!("{};", &p);
+        let fixed_tree = weggli::parse(&temp_pattern, is_cpp);
+        if !fixed_tree.root_node().has_error() {
+            info!("normalizing query: add missing ;");
+            tree = fixed_tree;
+            p = &temp_pattern;
         }
     }
 
@@ -242,12 +239,7 @@ fn parse_search_pattern(
 
     let mut c = validate_query(&tree, p, force_query)?;
 
-    Ok(build_query_tree(
-        p,
-        &mut c,
-        is_cpp,
-        Some(regex_constraints.clone()),
-    ))
+    build_query_tree(p, &mut c, is_cpp, Some(regex_constraints.clone()))
 }
 
 /// Validates the user supplied search query and quits with an error message in case
@@ -258,7 +250,7 @@ fn validate_query<'a>(
     tree: &'a tree_sitter::Tree,
     query: &str,
     force: bool,
-) -> Result<tree_sitter::TreeCursor<'a>, String> {
+) -> Result<tree_sitter::TreeCursor<'a>, QueryError> {
     if tree.root_node().has_error() && !force {
         let mut errmsg = format!("{}", "Error! Query parsing failed:".red().bold());
         let mut cursor = tree.root_node().walk();
@@ -298,7 +290,7 @@ fn validate_query<'a>(
             ));
         }
 
-        return Err(errmsg);
+        return Err(QueryError { message: errmsg });
     }
 
     info!("query sexp: {}", tree.root_node().to_sexp());
@@ -306,21 +298,25 @@ fn validate_query<'a>(
     let mut c = tree.walk();
 
     if c.node().named_child_count() > 1 {
-        return Err(format!(
-            "{}'{}' query contains multiple root nodes",
-            "Error: ".red(),
-            query
-        ));
+        return Err(QueryError {
+            message: format!(
+                "{}'{}' query contains multiple root nodes",
+                "Error: ".red(),
+                query
+            ),
+        });
     }
 
     c.goto_first_child();
 
     if !VALID_NODE_KINDS.contains(&c.node().kind()) {
-        return Err(format!(
-            "{}'{}' is not a supported query root node.",
-            "Error: ".red(),
-            query
-        ));
+        return Err(QueryError {
+            message: format!(
+                "{}'{}' is not a supported query root node.",
+                "Error: ".red(),
+                query
+            ),
+        });
     }
 
     Ok(c)

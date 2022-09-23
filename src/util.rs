@@ -14,12 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 // Try to parse a tree-sitter number literal into a constant value.
 // This function assumes that tree-sitter already parsed the input string
 // as a valid literal so we don't need to do much validation.
 // The function should work for all integer literals, but will fail for
-// floats. 
+// floats.
 pub fn parse_number_literal(input: &str) -> Option<i128> {
     // remove suffixes and '
     let mut input: String = input
@@ -27,7 +26,7 @@ pub fn parse_number_literal(input: &str) -> Option<i128> {
         .filter(|c| !['\'', 'u', 'U', 'l', 'L', 'z', 'Z'].contains(c))
         .collect();
 
-    let negative = if input.starts_with('-'){
+    let negative = if input.starts_with('-') {
         input.remove(0);
         true
     } else {

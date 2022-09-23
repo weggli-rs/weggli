@@ -36,6 +36,11 @@ extern "C" {
     fn tree_sitter_cpp() -> Language;
 }
 
+#[derive(Debug, Clone)]
+pub struct QueryError {
+    pub message: String,
+}
+
 /// Helper function to parse an input string
 /// into a tree-sitter tree, using our own slightly modified
 /// C grammar. This function won't fail but the returned
@@ -56,7 +61,7 @@ pub fn parse(source: &str, cpp: bool) -> Tree {
 }
 
 // Internal helper function to create a new tree-sitter query.
-fn ts_query(sexpr: &str, cpp: bool) -> tree_sitter::Query {
+fn ts_query(sexpr: &str, cpp: bool) -> Result<tree_sitter::Query, QueryError> {
     let language = if !cpp {
         unsafe { tree_sitter_c() }
     } else {
@@ -64,15 +69,10 @@ fn ts_query(sexpr: &str, cpp: bool) -> tree_sitter::Query {
     };
 
     match Query::new(language, sexpr) {
-        Ok(q) => q,
+        Ok(q) => Ok(q),
         Err(e) => {
-            eprintln!(
-                "Tree sitter query generation failed: {:?}\n {}",
-                e.kind, e.message
-            );
-            eprintln!("sexpr: {}", sexpr);
-            eprintln!("This is a bug! Can't recover :/");
-            std::process::exit(1);
+            let errmsg = format!( "Tree sitter query generation failed: {:?}\n {} \n sexpr: {}\n This is a bug! Can't recover :/", e.kind, e.message, sexpr);
+            Err(QueryError { message: errmsg })
         }
     }
 }
