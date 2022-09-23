@@ -372,8 +372,8 @@ impl QueryBuilder {
                             }
 
                             if unwrap {
-                                c.goto_first_child();
-                                return self.build(c, depth, strict_mode);
+                                    c.goto_first_child();
+                                    return self.build(c, depth, strict_mode);
                             }
                         }
                     }

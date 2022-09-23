@@ -44,7 +44,7 @@ pub struct CaptureResult {
     pub capture_idx: u32,
 }
 
-impl<'a, 'b> QueryResult {
+impl<'b> QueryResult {
     pub fn new(
         captures: Vec<CaptureResult>,
         vars: FxHashMap<String, usize>,

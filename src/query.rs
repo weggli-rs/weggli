@@ -56,7 +56,7 @@ struct CacheKey {
     node_id: usize,
 }
 
-impl<'a> QueryTree {
+impl QueryTree {
     pub fn new(
         query: Query,
         captures: Vec<Capture>,
