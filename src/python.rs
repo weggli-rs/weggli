@@ -18,6 +18,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+use crate::parse_search_pattern;
 use crate::query::QueryTree;
 use crate::result::QueryResult;
 use crate::QueryError;
@@ -41,10 +42,7 @@ struct QueryResultPy {
 #[pyfunction(cpp = "false")]
 #[pyo3(text_signature = "(query, cpp)")]
 fn parse_query(q: &str, cpp: bool) -> PyResult<QueryTreePy> {
-    let tree = crate::parse(q, cpp);
-    let mut c = tree.walk();
-
-    let qt = crate::builder::build_query_tree(q, &mut c, cpp, None)?;
+    let qt = parse_search_pattern(q, cpp, false, None)?;
     Ok(QueryTreePy { qt })
 }
 
