@@ -25,10 +25,15 @@ use colored::Colorize;
 use rayon::iter::ParallelBridge;
 use rayon::prelude::*;
 use regex::Regex;
+use rustyline::error::ReadlineError;
+use rustyline::{CompletionType, Config, EditMode};
+use rustyline::config::OutputStreamType;
+
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use std::{collections::HashMap, path::Path};
 use std::{collections::HashSet, fs};
+use std::convert::TryInto;
 use std::{io::prelude::*, path::PathBuf};
 use tree_sitter::Tree;
 use walkdir::WalkDir;
@@ -38,7 +43,11 @@ use weggli::parse_search_pattern;
 use weggli::query::QueryTree;
 use weggli::result::QueryResult;
 
+#[cfg(feature="binja")]
+use weggli::binja;
+
 mod cli;
+mod repl;
 
 fn main() {
     reset_signal_pipe_handler();
@@ -48,9 +57,6 @@ fn main() {
     if args.force_color {
         colored::control::set_override(true)
     }
-
-    // Keep track of all variables used in the input pattern(s)
-    let mut variables = HashSet::new();
 
     // Validate all regular expressions
     let regex_constraints = process_regexes(&args.regexes).unwrap_or_else(|e| {
@@ -65,6 +71,90 @@ fn main() {
         std::process::exit(1)
     });
 
+    if args.repl {
+        start_repl(args, regex_constraints);
+    } else {
+        if let Err(msg) = normal_mode(args, regex_constraints) {
+            eprintln!("{}", msg);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn collect_files(args: &cli::Args) -> (Vec<(PathBuf, u64)>, u64) {
+    // Verify that the --include and --exclude regexes are valid.
+    let helper_regex = |v: &[String]| -> Vec<Regex> {
+        v.iter()
+            .map(|s| {
+                let r = Regex::new(s);
+                match r {
+                    Ok(regex) => regex,
+                    Err(e) => {
+                        eprintln!("Regex error {}", e);
+                        std::process::exit(1)
+                    }
+                }
+            })
+            .collect()
+    };
+
+    let exclude_re = helper_regex(&args.exclude);
+    let include_re = helper_regex(&args.include);
+
+    // Collect and filter our input file set.
+    let mut files: Vec<(PathBuf, u64)> = if args.path.to_string_lossy() == "-" {
+        std::io::stdin()
+            .lock()
+            .lines()
+            .filter_map(|l| l.ok())
+            .map(|s| {
+                let path = Path::new(&s).to_path_buf();
+                let sz = fs::metadata(&path)
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0);
+                (path, sz)
+            })
+            .collect()
+    } else {
+        iter_files(&args.path, args.extensions.clone())
+            .map(|d| {
+                let path = d.into_path();
+                let sz = fs::metadata(&path)
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0);
+                (path, sz)
+            })
+            .collect()
+    };
+
+    let total_size = files.iter().map(|it| it.1).sum();
+
+    if !exclude_re.is_empty() || !include_re.is_empty() {
+        // Filter files based on include and exclude regexes
+        files.retain(|f| {
+            if exclude_re.iter().any(|r| r.is_match(&f.0.to_string_lossy())) {
+                return false;
+            }
+            if include_re.is_empty() {
+                return true;
+            }
+            include_re.iter().any(|r| r.is_match(&f.0.to_string_lossy()))
+        });
+    }
+
+    (files, total_size)
+}
+
+fn normal_mode(args: cli::Args, regex_constraints: RegexMap) -> Result<(), String> {
+    // Keep track of all variables used in the input pattern(s)
+    let mut variables = HashSet::new();
+
+    // Normalize all patterns and translate them into QueryTrees
+    // We also extract the identifiers at this point
+    // to use them for file filtering later on.
+    // Invalid patterns trigger a process exit in validate_query so
+    // after this point we now that all patterns are valid.
+    // The loop also fills the `variables` set with used variable names.
     // Normalize all patterns and translate them into QueryTrees
     // We also extract the identifiers at this point
     // to use them for file filtering later on.
@@ -108,61 +198,26 @@ fn main() {
     for v in regex_constraints.variables() {
         if !variables.contains(v) {
             eprintln!("'{}' is not a valid query variable", v.red());
-            std::process::exit(1)
+            std::process::exit(1);
         }
     }
 
-    // Verify that the --include and --exclude regexes are valid.
-    let helper_regex = |v: &[String]| -> Vec<Regex> {
-        v.iter()
-            .map(|s| {
-                let r = Regex::new(s);
-                match r {
-                    Ok(regex) => regex,
-                    Err(e) => {
-                        eprintln!("Regex error {}", e);
-                        std::process::exit(1)
-                    }
-                }
-            })
-            .collect()
-    };
-
-    let exclude_re = helper_regex(&args.exclude);
-    let include_re = helper_regex(&args.include);
-
-    // Collect and filter our input file set.
-    let mut files: Vec<PathBuf> = if args.path.to_string_lossy() == "-" {
-        std::io::stdin()
-            .lock()
-            .lines()
-            .filter_map(|l| l.ok())
-            .map(|s| Path::new(&s).to_path_buf())
-            .collect()
-    } else {
-        iter_files(&args.path, args.extensions.clone())
-            .map(|d| d.into_path())
-            .collect()
-    };
-
-    if !exclude_re.is_empty() || !include_re.is_empty() {
-        // Filter files based on include and exclude regexes
-        files.retain(|f| {
-            if exclude_re.iter().any(|r| r.is_match(&f.to_string_lossy())) {
-                return false;
-            }
-            if include_re.is_empty() {
-                return true;
-            }
-            include_re.iter().any(|r| r.is_match(&f.to_string_lossy()))
-        });
-    }
+    let (files, _) = collect_files(&args);
 
     info!("parsing {} files", files.len());
     if files.is_empty() {
         eprintln!("{}", String::from("No files to parse. Exiting...").red());
         std::process::exit(1)
     }
+
+    #[cfg(feature="binja")]
+    let binja = args.binja;
+
+    #[cfg(feature="binja")]
+    if binja {
+        binaryninja::headless::init();
+    }
+
 
     // The main parallelized work pipeline
     rayon::scope(|s| {
@@ -177,7 +232,16 @@ fn main() {
         let after = args.after;
 
         // Spawn worker to iterate through files, parse potential matches and forward ASTs
-        s.spawn(move |_| parse_files_worker(files, ast_tx, w, cpp));
+        #[cfg(feature="binja")]
+        if args.binja {
+            s.spawn(move|_| parse_binja_binaries_worker(files, ast_tx, Some(w), None));
+        } else {
+            s.spawn(move |_| parse_files_worker(files, ast_tx, Some(w), None, cpp));
+        }
+
+        // Spawn worker to iterate through files, parse potential matches and forward ASTs
+        #[cfg(not(feature="binja"))]
+        s.spawn(move |_| parse_files_worker(files, ast_tx, Some(w), None, cpp));
 
         // Run search queries on ASTs and apply CLI constraints
         // on the results. For single query executions, we can
@@ -189,6 +253,156 @@ fn main() {
             s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after));
         }
     });
+
+    #[cfg(feature="binja")]
+    if binja {
+        binaryninja::headless::shutdown();
+    }
+
+    Ok(())
+}
+
+fn start_repl(args: cli::Args, regex_constraints: RegexMap) {
+    let config = Config::builder()
+        .history_ignore_space(true)
+        .completion_type(CompletionType::List)
+        .edit_mode(EditMode::Emacs)
+        .output_stream(OutputStreamType::Stdout)
+        .build();
+
+    let mut rl = rustyline::Editor::with_config(config);
+    rl.set_helper(Some(repl::ReplHelper::new()));
+
+    let (files, total_size) = collect_files(&args);
+
+    let mut parsed = HashMap::new();
+
+    #[cfg(feature="binja")]
+    let binja = args.binja;
+
+    #[cfg(feature="binja")]
+    if binja {
+        binaryninja::headless::init();
+    }
+
+    info!("parsing {} files", files.len());
+    if files.is_empty() {
+        eprintln!("{}", String::from("No files to parse. Exiting...").red());
+        std::process::exit(1)
+    }
+
+    let progress_bar = indicatif::ProgressBar::new(total_size.try_into().unwrap());
+    let style = indicatif::ProgressStyle::default_bar()
+        .template("{prefix:.bold.dim} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})");
+    progress_bar.set_style(style);
+    progress_bar.set_prefix("Loading");
+
+    let cpp = args.cpp;
+    // Parallelized parsing pipeline
+    rayon::scope(|s| {
+        let (ast_tx, ast_rx) = mpsc::channel();
+
+        // Spawn worker to iterate through files, parse potential matches and forward ASTs
+        // We send a None WorkItem, as this is constant startup parsing overhead.
+        #[cfg(feature="binja")]
+        if args.binja {
+            s.spawn(|_| parse_binja_binaries_worker(files, ast_tx, None, Some(&progress_bar)));
+        } else {
+            s.spawn(|_| parse_files_worker(files, ast_tx, None, Some(&progress_bar), cpp));
+        }
+
+        // Spawn worker to iterate through files, parse potential matches and forward ASTs
+        #[cfg(not(feature="binja"))]
+        s.spawn(|_| parse_files_worker(files, ast_tx, None, Some(&progress_bar), cpp));
+
+        // Spawn another worker to gather the files into the hashmap
+        s.spawn(|_| gather_parsed_worker(ast_rx, &mut parsed));
+    });
+
+    progress_bar.finish_and_clear();
+
+    loop {
+        let readline = rl.readline(&(">> ".red()));
+        match readline {
+            Ok(pattern) => {
+                if let Err(msg) = do_repl_single_query(pattern, &args, &regex_constraints, &parsed)
+                {
+                    eprintln!("{}", msg.red().bold());
+                }
+            }
+            Err(ReadlineError::Eof) => break,
+            Err(_) => println!("{}", "No input".red()),
+        };
+    }
+
+    #[cfg(feature="binja")]
+    if binja {
+        binaryninja::headless::shutdown();
+    }
+}
+
+fn do_repl_single_query(
+    pattern: String,
+    args: &cli::Args,
+    regex_constraints: &RegexMap,
+    parsed: &HashMap<Location, (Tree, Arc<String>)>,
+) -> Result<(), String> {
+    let mut variables = HashSet::new();
+
+    let qt = parse_search_pattern(
+        &pattern,
+        args.cpp,
+        args.force_query,
+        Some(regex_constraints.clone()),
+    )
+    .map_err(|qe| {
+        if !args.cpp
+            && parse_search_pattern(
+                &pattern,
+                true,
+                args.force_query,
+                Some(regex_constraints.clone()),
+            )
+            .is_ok()
+        {
+            format!(
+                "{}\n{} This query is valid in C++ mode (-X)",
+                qe.message,
+                "Note:".bold(),
+            )
+        } else {
+            qe.message
+        }
+    })?;
+
+    let identifiers = qt.identifiers();
+    variables.extend(qt.variables());
+
+    let work = WorkItem { qt, identifiers };
+
+    for v in regex_constraints.variables() {
+        if !variables.contains(v) {
+            return Err(format!("'{}' is not a valid query variable", v.red()));
+        }
+    }
+
+    rayon::scope(|s| {
+        let (ast_tx, ast_rx) = mpsc::channel();
+        let (results_tx, _results_rx) = mpsc::channel();
+
+        s.spawn(move |_| retrieve_asts(ast_tx, parsed));
+
+        let w = [work];
+        // Run search queries on ASTs and apply CLI constraints
+        // on the results. For single query executions, we can
+        // directly print any remaining matches. For multi
+        // query runs we forward them to our next worker function
+        s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, &w, args));
+
+        // No need to spawn a multi_query_worker, as w.len() is always 1.
+    });
+
+    Ok(())
 }
 
 enum RegexError {
@@ -250,6 +464,10 @@ fn iter_files(path: &Path, extensions: Vec<String>) -> impl Iterator<Item = walk
 
             let path = entry.path();
 
+            if extensions.is_empty() {
+                return true;
+            }
+
             match path.extension() {
                 None => return false,
                 Some(ext) => {
@@ -267,17 +485,38 @@ struct WorkItem {
     identifiers: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Location {
+    SourceFile{ path: String },
+    BinaryFunction{ path: String, address: u64 },
+}
+
+impl Location {
+    pub  fn format_with_line(&self, line: usize) -> String {
+        match self {
+            Location::SourceFile { path: p } => {
+                format!("{}:{}", p.green().bold(), line )
+            },
+            Location::BinaryFunction { path: p, address } => {
+                let address = format!("0x{:x}", address);
+                format!("{}: {}", p.green().bold(), address.yellow())
+            },
+        }
+    }
+}
+
 /// Iterate over all paths in `files`, parse files that might contain a match for any of the queries
 /// in `work` and send them to the next worker using `sender`.
 fn parse_files_worker(
-    files: Vec<PathBuf>,
-    sender: Sender<(Arc<String>, Tree, String)>,
-    work: &[WorkItem],
+    files: Vec<(PathBuf, u64)>,
+    sender: Sender<(Arc<String>, Tree, Location)>,
+    work: Option<&[WorkItem]>,
+    progress_bar: Option<&indicatif::ProgressBar>,
     is_cpp: bool,
 ) {
     files
         .into_par_iter()
-        .for_each_with(sender, move |sender, path| {
+        .for_each_with(sender, move |sender, (path, sz)| {
             let maybe_parse = |path| {
                 let c = match fs::read(path) {
                     Ok(content) => content,
@@ -286,13 +525,22 @@ fn parse_files_worker(
 
                 let source = String::from_utf8_lossy(&c);
 
-                let potential_match = work.iter().any(|WorkItem { qt: _, identifiers }| {
-                    identifiers.iter().all(|i| source.find(i).is_some())
-                });
+                // If we know what we're looking for, pre-filter during the parsing stage.
+                if let Some(work) = work {
+                    let potential_match = work.iter().any(|WorkItem { qt: _, identifiers }| {
+                        identifiers.iter().all(|i| source.find(i).is_some())
+                    });
 
-                if !potential_match {
-                    None
-                } else {
+                    if !potential_match {
+                        None
+                    } else {
+                        Some((weggli::parse(&source, is_cpp), source.to_string()))
+                    }
+                }
+                // We don't have a workitem, so we will parse the complete file. This is okay,
+                // as we're probably in a situation where there is a one-time parsing
+                // overhead in the repl.
+                else {
                     Some((weggli::parse(&source, is_cpp), source.to_string()))
                 }
             };
@@ -301,33 +549,70 @@ fn parse_files_worker(
                     .send((
                         std::sync::Arc::new(source),
                         source_tree,
-                        path.display().to_string(),
+                        Location::SourceFile{ path: path.display().to_string() },
                     ))
                     .unwrap();
+                if let Some(progress) = progress_bar {
+                    progress.inc(sz);
+                }
+            }
+        });
+}
+
+#[cfg(feature="binja")]
+fn parse_binja_binaries_worker(
+    files: Vec<(PathBuf, u64)>,
+    sender: Sender<(Arc<String>, Tree, Location)>,
+    _work: Option<&[WorkItem]>,
+    progress_bar: Option<&indicatif::ProgressBar>,
+) {
+    files
+        .into_par_iter()
+        .for_each_with(sender, move |sender, (path, sz)| {
+            let decomp = binja::Decompiler::from_file(&path);
+
+            let n_functions = decomp.functions().len();
+            let chunk_size: f64 = sz as f64 / n_functions as f64;
+
+            for (i, function) in decomp.functions().iter().enumerate() {
+                let source = decomp.decompile_function(&function);
+                let source_tree = weggli::parse(&source, false);
+                sender
+                    .send((
+                        std::sync::Arc::new(source),
+                        source_tree,
+                        Location::BinaryFunction{ path: path.display().to_string(), address: function.start() },
+                    ))
+                    .unwrap();
+                if let Some(progress) = progress_bar {
+                    let inc = ((i+1) as f64 * chunk_size) as u64 - (i as f64 * chunk_size) as u64;
+                    progress.inc(inc as u64);
+                }
             }
         });
 }
 
 struct ResultsCtx {
     query_index: usize,
-    path: String,
+    location: Location,
     source: std::sync::Arc<String>,
     result: weggli::result::QueryResult,
 }
+
 
 /// Fetches parsed ASTs from `receiver`, runs all queries in `work` on them and
 /// filters the results based on the provided regex `constraints` and --unique --limit switches.
 /// For single query runs, the remaining results are directly printed. Otherwise they get forwarded
 /// to `multi_query_worker` through the `results_tx` channel.
 fn execute_queries_worker(
-    receiver: Receiver<(Arc<String>, Tree, String)>,
+    receiver: Receiver<(Arc<String>, Tree, Location)>,
     results_tx: Sender<ResultsCtx>,
     work: &[WorkItem],
     args: &cli::Args,
 ) {
     receiver.into_iter().par_bridge().for_each_with(
         results_tx,
-        |results_tx, (source, tree, path)| {
+        |results_tx, (source, tree, location)| {
             // For each query
             work.iter()
                 .enumerate()
@@ -369,9 +654,8 @@ fn execute_queries_worker(
                         if work.len() == 1 {
                             let line = source[..m.start_offset()].matches('\n').count() + 1;
                             println!(
-                                "{}:{}\n{}",
-                                path.clone().bold(),
-                                line,
+                                "{}\n{}",
+                                location.format_with_line(line),
                                 m.display(&source, args.before, args.after)
                             );
                         } else {
@@ -379,7 +663,7 @@ fn execute_queries_worker(
                                 .send(ResultsCtx {
                                     query_index: i,
                                     result: m,
-                                    path: path.clone(),
+                                    location: location.clone(),
                                     source: source.clone(),
                                 })
                                 .unwrap();
@@ -440,13 +724,32 @@ fn multi_query_worker(
         rv.into_iter().for_each(|r| {
             let line = r.source[..r.result.start_offset()].matches('\n').count() + 1;
             println!(
-                "{}:{}\n{}",
-                r.path.bold(),
-                line,
+                "{}\n{}",
+                r.location.format_with_line(line),
                 r.result.display(&r.source, before, after)
             );
         })
     });
+}
+
+fn gather_parsed_worker(
+    receiver: Receiver<(Arc<String>, Tree, Location)>,
+    hashmap: &mut HashMap<Location, (Tree, Arc<String>)>,
+) {
+    for (source, tree, location) in receiver.into_iter() {
+        hashmap.insert(location, (tree, source));
+    }
+}
+
+fn retrieve_asts(
+    sender: Sender<(Arc<String>, Tree, Location)>,
+    hashmap: &HashMap<Location, (Tree, Arc<String>)>,
+) {
+    for (location, (tree, source)) in hashmap {
+        sender
+            .send((source.clone(), tree.clone(), location.clone()))
+            .unwrap();
+    }
 }
 
 // Exit on SIGPIPE
