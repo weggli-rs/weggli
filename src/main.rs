@@ -42,6 +42,7 @@ use weggli::RegexMap;
 use weggli::parse_search_pattern;
 use weggli::query::QueryTree;
 use weggli::result::QueryResult;
+use weggli::Source;
 
 #[cfg(feature="binja")]
 use weggli::binja;
@@ -345,7 +346,7 @@ fn do_repl_single_query(
     pattern: String,
     args: &cli::Args,
     regex_constraints: &RegexMap,
-    parsed: &HashMap<Location, (Tree, Arc<String>)>,
+    parsed: &HashMap<Location, (Tree, Arc<Box<dyn Source + Send + Sync>>)>,
 ) -> Result<(), String> {
     let mut variables = HashSet::new();
 
@@ -511,7 +512,7 @@ impl Location {
 /// in `work` and send them to the next worker using `sender`.
 fn parse_files_worker(
     files: Vec<(PathBuf, u64)>,
-    sender: Sender<(Arc<String>, Tree, Location)>,
+    sender: Sender<(Arc<Box<dyn Source + Send + Sync>>, Tree, Location)>,
     work: Option<&[WorkItem]>,
     progress_bar: Option<&indicatif::ProgressBar>,
     is_cpp: bool,
@@ -549,7 +550,7 @@ fn parse_files_worker(
             if let Some((source_tree, source)) = maybe_parse(&path) {
                 sender
                     .send((
-                        std::sync::Arc::new(source),
+                        std::sync::Arc::new(Box::new(source)),
                         source_tree,
                         Location::SourceFile{ path: path.display().to_string() },
                     ))
@@ -564,7 +565,7 @@ fn parse_files_worker(
 #[cfg(feature="binja")]
 fn parse_binja_binaries_worker(
     files: Vec<(PathBuf, u64)>,
-    sender: Sender<(Arc<String>, Tree, Location)>,
+    sender: Sender<(Arc<Box<dyn Source + Send + Sync>>, Tree, Location)>,
     _work: Option<&[WorkItem]>,
     progress_bar: Option<&indicatif::ProgressBar>,
 ) {
@@ -577,11 +578,11 @@ fn parse_binja_binaries_worker(
             let chunk_size: f64 = sz as f64 / n_functions as f64;
 
             for (i, function) in decomp.functions().iter().enumerate() {
-                let source = decomp.decompile_function(&function);
-                let source_tree = weggli::parse(&source, false);
+                let decompiled = decomp.decompile_function(&function);
+                let source_tree = weggli::parse(decompiled.text(), false);
                 sender
                     .send((
-                        std::sync::Arc::new(source),
+                        std::sync::Arc::new(Box::new(decompiled)),
                         source_tree,
                         Location::BinaryFunction{ path: path.display().to_string(), address: function.start() },
                     ))
@@ -597,7 +598,7 @@ fn parse_binja_binaries_worker(
 struct ResultsCtx {
     query_index: usize,
     location: Location,
-    source: std::sync::Arc<String>,
+    source: std::sync::Arc<Box<dyn Source + Send + Sync>>,
     result: weggli::result::QueryResult,
 }
 
@@ -607,7 +608,7 @@ struct ResultsCtx {
 /// For single query runs, the remaining results are directly printed. Otherwise they get forwarded
 /// to `multi_query_worker` through the `results_tx` channel.
 fn execute_queries_worker(
-    receiver: Receiver<(Arc<String>, Tree, Location)>,
+    receiver: Receiver<(Arc<Box<dyn Source + Send + Sync>>, Tree, Location)>,
     results_tx: Sender<ResultsCtx>,
     work: &[WorkItem],
     args: &cli::Args,
@@ -620,7 +621,7 @@ fn execute_queries_worker(
                 .enumerate()
                 .for_each(|(i, WorkItem { qt, identifiers: _ })| {
                     // Run query
-                    let matches = qt.matches(tree.root_node(), &source);
+                    let matches = qt.matches(tree.root_node(), source.text());
 
                     if matches.is_empty() {
                         return;
@@ -632,7 +633,7 @@ fn execute_queries_worker(
                             let mut seen = HashSet::new();
                             m.vars
                                 .keys()
-                                .map(|k| m.value(k, &source).unwrap())
+                                .map(|k| m.value(k, source.text()).unwrap())
                                 .all(|x| seen.insert(x))
                         } else {
                             true
@@ -654,11 +655,11 @@ fn execute_queries_worker(
                     let process_match = |m: QueryResult| {
                         // single query
                         if work.len() == 1 {
-                            let line = source[..m.start_offset()].matches('\n').count() + 1;
+                            let line = source.text()[..m.start_offset()].matches('\n').count() + 1;
                             println!(
                                 "{}\n{}",
                                 location.format_with_line(line),
-                                m.display(&source, args.before, args.after)
+                                m.display(source.as_ref(), args.before, args.after)
                             );
                         } else {
                             results_tx
@@ -708,7 +709,7 @@ fn multi_query_worker(
     let filter = |x: &mut Vec<ResultsCtx>, y: &mut Vec<ResultsCtx>| {
         x.retain(|r| {
             y.iter()
-                .any(|f| r.result.chainable(&r.source, &f.result, &f.source))
+                .any(|f| r.result.chainable(r.source.text(), &f.result, f.source.text()))
         })
     };
 
@@ -724,19 +725,19 @@ fn multi_query_worker(
     // Print remaining results
     query_results.into_iter().for_each(|rv| {
         rv.into_iter().for_each(|r| {
-            let line = r.source[..r.result.start_offset()].matches('\n').count() + 1;
+            let line = r.source.text()[..r.result.start_offset()].matches('\n').count() + 1;
             println!(
                 "{}\n{}",
                 r.location.format_with_line(line),
-                r.result.display(&r.source, before, after)
+                r.result.display(r.source.as_ref(), before, after)
             );
         })
     });
 }
 
 fn gather_parsed_worker(
-    receiver: Receiver<(Arc<String>, Tree, Location)>,
-    hashmap: &mut HashMap<Location, (Tree, Arc<String>)>,
+    receiver: Receiver<(Arc<Box<dyn Source + Send + Sync>>, Tree, Location)>,
+    hashmap: &mut HashMap<Location, (Tree, Arc<Box<dyn Source + Send + Sync>>)>,
 ) {
     for (source, tree, location) in receiver.into_iter() {
         hashmap.insert(location, (tree, source));
@@ -744,8 +745,8 @@ fn gather_parsed_worker(
 }
 
 fn retrieve_asts(
-    sender: Sender<(Arc<String>, Tree, Location)>,
-    hashmap: &HashMap<Location, (Tree, Arc<String>)>,
+    sender: Sender<(Arc<Box<dyn Source + Send + Sync>>, Tree, Location)>,
+    hashmap: &HashMap<Location, (Tree, Arc<Box<dyn Source + Send + Sync>>)>,
 ) {
     for (location, (tree, source)) in hashmap {
         sender

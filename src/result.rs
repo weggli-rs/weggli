@@ -17,6 +17,9 @@ limitations under the License.
 use colored::Colorize;
 use rustc_hash::FxHashMap;
 use std::cmp;
+use std::fmt::Write;
+
+use crate::Source;
 
 /// Struct for storing (partial) query matches.
 /// We really don't want to keep track of tree-sitter AST lifetimes so
@@ -63,21 +66,25 @@ impl<'b> QueryResult {
 
     /// Returns a colored String representation of the result with `before` + `after`
     /// context lines around each captured node.
-    pub fn display(&self, source: &'b str, before: usize, after: usize) -> String {
+    pub fn display<T: Source>(&self, source: &T, before: usize, after: usize) -> String {
         // Experiments show that results are roughly between 300 and 700 characters long
         // so pre-allocating a string that is 1024 bytes long should be enough.
         let mut result = String::with_capacity(1024);
+        let source_text = source.text();
 
         // Add two lines of the function header
         // TODO: We should just store the range of the header and always print it in full.
-        let mut header_end = linebreak_index(source, self.function.start, 1, false);
+        let mut header_end = linebreak_index(source_text, self.function.start, 1, false);
 
         if self.captures.len() > 1 && self.captures[1].range.start > self.function.start {
             // Ensure we don't overlap with the range of the next node.
             header_end = cmp::min(header_end, self.captures[1].range.start - 1);
         }
 
-        result += &source[self.function.start..header_end];
+        if let Some(function_start_line) = source.line_number_at_offset(self.function.start) {
+            write!(result, "{}: ", source.format_line(function_start_line));
+        }
+        write!(result, "{}", &source_text[self.function.start..header_end]);
 
         let mut offset = header_end;
 
@@ -102,8 +109,8 @@ impl<'b> QueryResult {
             }
 
             // Print lines before/after the match, based on -A / -B
-            let start = linebreak_index(source, r.start, before, true);
-            let mut end = linebreak_index(source, r.end, after, false);
+            let start = linebreak_index(source_text, r.start, before, true);
+            let mut end = linebreak_index(source_text, r.end, after, false);
 
             // Avoid overlapping with the next node
             if index < clean_ranges.len() - 1 && r.end < clean_ranges[index + 1].start {
@@ -113,25 +120,35 @@ impl<'b> QueryResult {
             // Never go beyond the function boundary.
             end = cmp::min(end, self.function.end);
 
-            if start <= offset {
-                // we are not skipping anything
-                result += &source[offset..r.start];
-            } else {
+            if start > offset {
                 // indicate that some code is skipped
-                result += "..";
-                result += &source[start..r.start];
+                writeln!(result, "..");
             }
-            // Mark the node itself in red.
-            result += &format!("{}", &source[r.start..r.end].red());
-            result += &source[r.end..end];
+
+            offset = cmp::max(start + 1, offset);
+
+            let lines = format!("{}{}{}",
+                &source_text[offset..r.start],
+                &source_text[r.start..r.end].red(),
+                &source_text[r.end..end],
+            );
+
+            let start_line = source.line_number_at_offset(offset);
+            for (line_offset, line) in lines.split('\n').enumerate() {
+                if let Some(start_line) = start_line {
+                    write!(result, "{}: ", source.format_line(start_line + line_offset));
+                }
+                writeln!(result, "{line}");
+            }
+
             offset = end;
         }
 
         // Print function ending.
         if offset < self.function.end {
-            let last_line = linebreak_index(source, self.function.end, 0, true);
-            result += "..";
-            result += &source[last_line..self.function.end];
+            let last_line = linebreak_index(source_text, self.function.end, 0, true);
+            write!(result, "..");
+            write!(result, "{}", &source_text[last_line..self.function.end]);
         }
 
         result

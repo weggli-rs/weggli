@@ -1,7 +1,10 @@
+use crate::Source;
+
 use binaryninja::binaryview::{BinaryView, BinaryViewExt};
 use binaryninja::disassembly::{DisassemblyOption, DisassemblySettings};
 use binaryninja::function::Function;
 use binaryninja::linearview::{LinearViewCursor, LinearViewObject};
+use colored::Colorize;
 
 use std::fmt::Write;
 use std::path::Path;
@@ -22,7 +25,7 @@ impl Decompiler {
         self.view.functions()
     }
 
-    pub fn decompile_function(&self, function: &Function) -> String {
+    pub fn decompile_function(&self, function: &Function) -> Decompilation {
         let settings = DisassemblySettings::new();
         settings.set_option(DisassemblyOption::ShowAddress, false);
         settings.set_option(DisassemblyOption::WaitForIL, true);
@@ -39,12 +42,31 @@ impl Decompiler {
 
         let lines = first_lines.iter().chain(next_lines.iter());
 
-        let mut decompilation = String::new();
+        let mut decompiled = String::new();
 
-        for line in lines {
-            writeln!(decompilation, "{}", line.as_ref()).unwrap();
+        let line_mapping = lines.map(|line| {
+            writeln!(decompiled, "{}", line.as_ref()).unwrap();
+            line.addr()
+        }).collect();
+
+        Decompilation {
+            line_mapping,
+            decompiled
         }
+    }
+}
 
-        decompilation
+pub struct Decompilation {
+    line_mapping: Vec<u64>,
+    decompiled: String,
+}
+
+impl Source for Decompilation {
+    fn text(&self) -> &str {
+        &self.decompiled
+    }
+
+    fn format_line(&self, line: usize) -> String {
+        format!("0x{:08x}", self.line_mapping[line]).yellow().to_string()
     }
 }

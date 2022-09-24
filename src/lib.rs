@@ -246,3 +246,50 @@ fn validate_query<'a>(
 
     Ok(c)
 }
+
+/// Trait describing something that can be parsed and searched over.
+pub trait Source {
+    /// Return the text of the source.
+    fn text(&self) -> &str;
+
+    /// The line number within the source at the given offset.
+    fn line_number_at_offset(&self, offset: usize) -> Option<usize> {
+        if offset > self.text().len() {
+            return None;
+        }
+
+        let mut counted = 0;
+        for (line_number, line) in self.text().split_inclusive('\n').enumerate() {
+            counted += line.len();
+            if counted > offset {
+                return Some(line_number)
+            }
+        }
+
+        None
+    }
+
+    /// How to display a line number.
+    /// 
+    /// This can be used for line number offsets when parsing
+    /// only an excerpt from a file or line to address mappings.
+    fn format_line(&self, line: usize) -> String {
+        format!("{}", line + 1)
+    }
+}
+
+impl Source for String {
+    fn text(&self) -> &str {
+        self
+    }
+}
+
+impl Source for Box<dyn Source + Send + Sync> {
+    fn text(&self) -> &str {
+        self.as_ref().text()
+    }
+
+    fn format_line(&self, line: usize) -> String {
+        self.as_ref().format_line(line)
+    }
+}
