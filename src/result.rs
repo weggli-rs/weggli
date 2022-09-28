@@ -15,9 +15,8 @@ limitations under the License.
 */
 
 use colored::Colorize;
-use std::cmp;
 use rustc_hash::FxHashMap;
-
+use std::cmp;
 
 /// Struct for storing (partial) query matches.
 /// We really don't want to keep track of tree-sitter AST lifetimes so
@@ -45,7 +44,7 @@ pub struct CaptureResult {
     pub capture_idx: u32,
 }
 
-impl<'a, 'b> QueryResult {
+impl<'b> QueryResult {
     pub fn new(
         captures: Vec<CaptureResult>,
         vars: FxHashMap<String, usize>,
@@ -160,14 +159,13 @@ impl<'a, 'b> QueryResult {
 
         let mut captures = self.captures.clone();
 
-        if enforce_order {
-            if other
+        if enforce_order
+            && other
                 .captures
                 .iter()
                 .any(|r| self.captures.iter().any(|r2| r.range.start <= r2.range.end))
-            {
-                return None;
-            }
+        {
+            return None;
         }
 
         captures.extend(other.captures.clone());
@@ -256,11 +254,11 @@ fn test_linebreak_index() {
     let input = "aaa\nbbb\nccc\nd";
     let index = input.find('b').unwrap();
 
-    assert_eq!(linebreak_index(&input, index, 1, true), 0);
+    assert_eq!(linebreak_index(input, index, 1, true), 0);
     assert_eq!(
-        linebreak_index(&input, index, 1, false),
+        linebreak_index(input, index, 1, false),
         input.find('d').unwrap()
     );
-    assert_eq!(linebreak_index(&input, index, 5, false), input.len());
-    assert_eq!(linebreak_index(&input, index, 4, true), 0);
+    assert_eq!(linebreak_index(input, index, 5, false), input.len());
+    assert_eq!(linebreak_index(input, index, 4, true), 0);
 }
