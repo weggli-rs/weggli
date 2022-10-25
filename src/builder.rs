@@ -526,12 +526,11 @@ impl QueryBuilder {
         } else if kind == "identifier" && pattern.starts_with('$') {
             if is_num_var(pattern) && parent!="declarator" {
                 "(number_literal)".to_string()
+            }
+            else if self.cpp {
+                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]".to_string()
             } else {
-                if self.cpp {
-                    "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]".to_string()
-                } else {
-                    "[(identifier) (field_expression) (field_identifier)]".to_string()
-                }
+                "[(identifier) (field_expression) (field_identifier)]".to_string()
             }
         } else {
             format!("({})", kind)
