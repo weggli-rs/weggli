@@ -25,13 +25,13 @@ use colored::Colorize;
 use rayon::iter::ParallelBridge;
 use rayon::prelude::*;
 use regex::Regex;
-use thread_local::ThreadLocal;
 use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use std::{collections::HashMap, path::Path};
 use std::{collections::HashSet, fs};
 use std::{io::prelude::*, path::PathBuf};
+use thread_local::ThreadLocal;
 use tree_sitter::Tree;
 use walkdir::WalkDir;
 use weggli::RegexMap;
@@ -277,8 +277,6 @@ fn parse_files_worker(
     work: &[WorkItem],
     is_cpp: bool,
 ) {
-
-
     let tl = ThreadLocal::new();
 
     files
@@ -299,10 +297,11 @@ fn parse_files_worker(
                 if !potential_match {
                     None
                 } else {
-                    let mut parser  = tl.get_or(|| RefCell::new(weggli::get_parser(is_cpp))).borrow_mut();
+                    let mut parser = tl
+                        .get_or(|| RefCell::new(weggli::get_parser(is_cpp)))
+                        .borrow_mut();
                     let tree = parser.parse(&source.as_bytes(), None).unwrap();
                     Some((tree, source.to_string()))
-                    
                 }
             };
             if let Some((source_tree, source)) = maybe_parse(&path) {
