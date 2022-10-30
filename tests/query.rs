@@ -917,3 +917,40 @@ fn test_sizeof() {
     let matches = parse_and_match_cpp(needle, source);
     assert_eq!(matches, 1);
 }
+
+#[test]
+fn test_number() {
+    let needle = r#"{char buf[$1]; memcpy(buf,_, $2);"#;
+
+    let source = r#"
+    int test_num() {
+        char buf[10];
+        memcpy(buf,_,10);
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 1);
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+}
+
+#[test]
+fn test_number2() {
+    let needle = r#"{foo($2); $a = $2+$3;}"#;
+
+    let source = r#"
+    int test_num2() {
+        foo(10);
+        int a = 10 + 12;
+        int b = 5 + foo(a);
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 1);
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+}

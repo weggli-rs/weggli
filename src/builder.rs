@@ -61,6 +61,8 @@ fn _build_query_tree(
         c.goto_first_child();
     }
 
+    let kind = c.node().kind();
+
     let mut variables = HashSet::new();
 
     let sexp = if !is_multi_pattern {
@@ -71,7 +73,7 @@ fn _build_query_tree(
         debug!("query needs anchor: {}", needs_anchor);
 
         // The main work happens here. Iterate through the AST and create a tree-sitter query
-        let mut s = b.build(c, 0, strict_mode)?;
+        let mut s = b.build(c, 0, strict_mode, kind)?;
 
         // Make sure user supplied function headers are displayed by adding a Capture
         if !needs_anchor {
@@ -112,7 +114,7 @@ fn _build_query_tree(
             let before = b.captures.len();
             let mut cursor = child.walk();
 
-            let child_sexp = b.build(&mut cursor, 0, strict_mode)?;
+            let child_sexp = b.build(&mut cursor, 0, strict_mode, kind)?;
 
             let captures = &process_captures(&b.captures, before, &mut variables);
 
@@ -251,6 +253,7 @@ impl QueryBuilder {
         c: &mut TreeCursor,
         depth: usize,
         strict_mode: bool,
+        parent: &'static str,
     ) -> Result<String, QueryError> {
         // This function works by recursively processing every node in the tree,
         // creating new sub queries, captures or negative queries when needed
@@ -272,7 +275,7 @@ impl QueryBuilder {
         match kind {
             "binary_expression" if self.is_transformable_binary_exp(c.node()) => {
                 assert!(c.goto_first_child());
-                let left = self.build(c, depth + 1, strict_mode)?;
+                let left = self.build(c, depth + 1, strict_mode, kind)?;
 
                 // operator
                 assert!(c.goto_next_sibling());
@@ -288,7 +291,7 @@ impl QueryBuilder {
                 };
 
                 assert!(c.goto_next_sibling());
-                let right = self.build(c, depth + 1, strict_mode)?;
+                let right = self.build(c, depth + 1, strict_mode, kind)?;
 
                 c.goto_parent();
                 return Ok(
@@ -307,7 +310,7 @@ impl QueryBuilder {
                     return Ok("".to_string());
                 } else if self.get_text(&label).to_uppercase() == "STRICT" {
                     if let Some(child) = c.node().named_child(1) {
-                        return self.build(&mut child.walk(), depth, true);
+                        return self.build(&mut child.walk(), depth, true, kind);
                     } else {
                         return Ok("".to_string());
                     }
@@ -335,11 +338,11 @@ impl QueryBuilder {
             | "field_identifier"
             | "sized_type_specifier"
             | "primitive_type"
-            | "namespace_identifier" => return Ok(self.build_identifier(c)),
+            | "namespace_identifier" => return self.build_identifier(c, parent),
             "assignment_expression" => return self.build_assignment(c, depth, strict_mode),
             // Function calls (including wildcards)
             "call_expression" => {
-                if let Some(s) = self.build_call_expr(c, depth, strict_mode)? {
+                if let Some(s) = self.build_call_expr(c, depth, strict_mode, kind)? {
                     return Ok(s);
                 }
             }
@@ -372,8 +375,8 @@ impl QueryBuilder {
                             }
 
                             if unwrap {
-                                    c.goto_first_child();
-                                    return self.build(c, depth, strict_mode);
+                                c.goto_first_child();
+                                return self.build(c, depth, strict_mode, kind);
                             }
                         }
                     }
@@ -435,7 +438,7 @@ impl QueryBuilder {
                 result += &format!(" {}:", n);
 
                 // Recursively build the query for the child node.
-                let t = self.build(c, depth + 1, strict_mode)?;
+                let t = self.build(c, depth + 1, strict_mode, n)?;
 
                 if n == "declarator" && is_funcdef {
                     // hacky way to make "_ func()" match on "bar * func()".
@@ -454,10 +457,10 @@ impl QueryBuilder {
                     result += " .";
                 }
                 result += " ";
-                result += &self.build(c, depth + 1, strict_mode)?;
+                result += &self.build(c, depth + 1, strict_mode, kind)?;
             // Unnamed syntax nodes like {, ; or keywords.
             } else {
-                let sexp = self.build(c, depth + 1, strict_mode)?;
+                let sexp = self.build(c, depth + 1, strict_mode, kind)?;
                 // We want to highlight keywords in our search results so we add Display captures
                 if sexp.chars().all(|c| char::is_alphanumeric(c) || c == '"') && sexp != "\"\"\"" {
                     result += &format!(
@@ -503,20 +506,29 @@ impl QueryBuilder {
     }
 
     // Handle $x, _, foo, char, ->field and co.
-    fn build_identifier(&mut self, c: &mut TreeCursor) -> String {
+    fn build_identifier(
+        &mut self,
+        c: &mut TreeCursor,
+        parent: &'static str,
+    ) -> Result<String, QueryError> {
         let pattern = self.get_text(&c.node());
         let kind = c.node().kind();
 
+        let is_num_var =
+            |p: &str| -> bool { p.starts_with('$') && p.chars().skip(1).all(|c| c.is_numeric()) };
+
         if pattern == "_" {
-            return "(_)".to_string();
+            return Ok("(_)".to_string());
         }
 
         let mut result = if kind == "type_identifier" {
             "[ (type_identifier) (sized_type_specifier) (primitive_type)]".to_string()
         } else if kind == "identifier" && pattern.starts_with('$') {
-            if self.cpp {
-                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]"
-                    .to_string()
+            if is_num_var(pattern) && parent!="declarator" {
+                "(number_literal)".to_string()
+            }
+            else if self.cpp {
+                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]".to_string()
             } else {
                 "[(identifier) (field_expression) (field_identifier)]".to_string()
             }
@@ -533,7 +545,7 @@ impl QueryBuilder {
         result += " @";
         result += &add_capture(&mut self.captures, capture);
 
-        result
+        Ok(result)
     }
 
     // Handle $foo() and _(). Returns None if the call does not need special handling.
@@ -542,6 +554,7 @@ impl QueryBuilder {
         c: &mut TreeCursor,
         depth: usize,
         strict_mode: bool,
+        parent: &'static str,
     ) -> Result<Option<String>, QueryError> {
         if self.is_subexpr_wildcard(c.node()) {
             let mut arg = c.node().child_by_field_name("arguments").unwrap().walk();
@@ -560,7 +573,7 @@ impl QueryBuilder {
 
             // Wildcards for depth 0 are meaningless. Just unwrap it.
             if depth == 0 {
-                return Ok(Some(self.build(&mut arg, depth, strict_mode)?));
+                return Ok(Some(self.build(&mut arg, depth, strict_mode, parent)?));
             }
             self.id += 1;
             let capture = Capture::Subquery(Box::new(_build_query_tree(
@@ -586,7 +599,7 @@ impl QueryBuilder {
 
                 let capture_str = "@".to_string() + &add_capture(&mut self.captures, capture);
 
-                let a = self.build(&mut arguments.walk(), depth + 1, false)?;
+                let a = self.build(&mut arguments.walk(), depth + 1, false, parent)?;
 
                 let fs = if strict_mode {
                     format! {"(identifier) {}",capture_str}
@@ -617,8 +630,10 @@ impl QueryBuilder {
         depth: usize,
         strict_mode: bool,
     ) -> Result<String, QueryError> {
+        let kind = c.node().kind();
+
         assert!(c.goto_first_child());
-        let left = self.build(c, depth + 1, strict_mode)?;
+        let left = self.build(c, depth + 1, strict_mode, kind)?;
 
         let left_is_identifier = c.node().kind() == "identifier";
 
@@ -630,15 +645,15 @@ impl QueryBuilder {
 
         // handle += / -= / ..
         let result = if c.node().kind() != "=" || !left_is_identifier {
-            let operator = self.build(c, depth + 1, strict_mode)?;
+            let operator = self.build(c, depth + 1, strict_mode, kind)?;
             assert!(c.goto_next_sibling());
-            let right = optional_cast(self.build(c, depth + 1, strict_mode)?);
+            let right = optional_cast(self.build(c, depth + 1, strict_mode, kind)?);
 
             format! {"(assignment_expression left: {} {} right: {})" , left, operator, right}
         } else {
             // A query that searches for assignments (a = x;) should also match on init declarations (int a =x;)
             assert!(c.goto_next_sibling());
-            let right = optional_cast(self.build(c, depth + 1, strict_mode)?);
+            let right = optional_cast(self.build(c, depth + 1, strict_mode, kind)?);
 
             format! {r"[(assignment_expression left: {0} right: {1})
                         (init_declarator declarator: {0} value: {1}) 

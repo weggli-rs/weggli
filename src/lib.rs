@@ -16,10 +16,10 @@ limitations under the License.
 
 use std::collections::{hash_map::Keys, HashMap};
 
+use colored::Colorize;
 use query::QueryTree;
 use regex::Regex;
 use tree_sitter::{Language, Parser, Query, Tree};
-use colored::Colorize;
 
 #[macro_use]
 extern crate log;
@@ -48,18 +48,23 @@ pub struct QueryError {
 /// C grammar. This function won't fail but the returned
 /// Tree might be invalid and contain errors.
 pub fn parse(source: &str, cpp: bool) -> Tree {
+    let mut parser = get_parser(cpp);
+    parser.parse(source, None).unwrap()
+}
+
+pub fn get_parser(cpp: bool) -> Parser {
     let language = if !cpp {
         unsafe { tree_sitter_c() }
     } else {
         unsafe { tree_sitter_cpp() }
     };
-    let mut parser = Parser::new();
+
+    let mut parser  = Parser::new();
     if let Err(e) = parser.set_language(language) {
         eprintln!("{}", e);
         panic!();
     }
-
-    parser.parse(source, None).unwrap()
+    parser
 }
 
 // Internal helper function to create a new tree-sitter query.
@@ -101,7 +106,6 @@ impl RegexMap {
         }
     }
 }
-
 
 /// Translate the search pattern in `pattern` into a weggli QueryTree.
 /// `is_cpp` enables C++ mode. `force_query` can be used to allow queries with syntax errors.
