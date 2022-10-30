@@ -15,9 +15,8 @@ limitations under the License.
 */
 
 use colored::Colorize;
-use std::cmp;
 use rustc_hash::FxHashMap;
-
+use std::{cmp, ops::Range};
 
 /// Struct for storing (partial) query matches.
 /// We really don't want to keep track of tree-sitter AST lifetimes so
@@ -45,7 +44,7 @@ pub struct CaptureResult {
     pub capture_idx: u32,
 }
 
-impl<'a, 'b> QueryResult {
+impl<'b> QueryResult {
     pub fn new(
         captures: Vec<CaptureResult>,
         vars: FxHashMap<String, usize>,
@@ -65,9 +64,8 @@ impl<'a, 'b> QueryResult {
     /// Returns a colored String representation of the result with `before` + `after`
     /// context lines around each captured node.
     pub fn display(&self, source: &'b str, before: usize, after: usize) -> String {
-        // Experiments show that results are roughly between 300 and 700 characters long
-        // so pre-allocating a string that is 1024 bytes long should be enough.
-        let mut result = String::with_capacity(1024);
+
+        let mut d = DisplayHelper::new(source);
 
         // Add two lines of the function header
         // TODO: We should just store the range of the header and always print it in full.
@@ -78,7 +76,7 @@ impl<'a, 'b> QueryResult {
             header_end = cmp::min(header_end, self.captures[1].range.start - 1);
         }
 
-        result += &source[self.function.start..header_end];
+        d.add(self.function.start..header_end);
 
         let mut offset = header_end;
 
@@ -116,26 +114,28 @@ impl<'a, 'b> QueryResult {
 
             if start <= offset {
                 // we are not skipping anything
-                result += &source[offset..r.start];
+                d.add(offset..r.start);
             } else {
                 // indicate that some code is skipped
-                result += "..";
-                result += &source[start..r.start];
+                d.add(start..r.start);
             }
             // Mark the node itself in red.
-            result += &format!("{}", &source[r.start..r.end].red());
-            result += &source[r.end..end];
+            d.highlight(r.start..r.end);
+            d.add(r.end..end);
             offset = end;
         }
 
         // Print function ending.
         if offset < self.function.end {
             let last_line = linebreak_index(source, self.function.end, 0, true);
-            result += "..";
-            result += &source[last_line..self.function.end];
+            if offset < last_line {
+                d.add(last_line..self.function.end);
+            } else {
+                d.add(offset..self.function.end);
+            }
         }
 
-        result
+        d.output
     }
 
     /// Return the captured value for a variable.
@@ -160,14 +160,13 @@ impl<'a, 'b> QueryResult {
 
         let mut captures = self.captures.clone();
 
-        if enforce_order {
-            if other
+        if enforce_order
+            && other
                 .captures
                 .iter()
                 .any(|r| self.captures.iter().any(|r2| r.range.start <= r2.range.end))
-            {
-                return None;
-            }
+        {
+            return None;
         }
 
         captures.extend(other.captures.clone());
@@ -251,16 +250,55 @@ fn linebreak_index(source: &str, index: usize, count: usize, backwards: bool) ->
     }
 }
 
+struct DisplayHelper<'a> {
+    source: &'a str,
+    offset: usize,
+    output: String,
+    _line: usize
+}
+
+impl<'a> DisplayHelper<'a> {
+
+    fn new(source: &'a str) -> DisplayHelper<'a> {
+        DisplayHelper { source, offset: 0, output: String::with_capacity(1000), _line: 0 }
+    }
+
+    fn add(&mut self, range: Range<usize>) {
+        self._add(range, false);
+
+    }
+
+    fn highlight(&mut self, range: Range<usize>) {
+        self._add(range, true)
+    }
+
+    fn _add(&mut self, range: Range<usize>, colored: bool) {
+        assert!(self.offset <= range.start);
+        if self.offset < range.start && self.offset!=0 {
+            self.output += ".."
+        }
+
+        self.offset = range.end;
+
+        if colored {
+            self.output += &format!("{}", &self.source[range].red());
+        } else {
+            self.output += &self.source[range]
+        };
+    }
+
+}
+
 #[test]
 fn test_linebreak_index() {
     let input = "aaa\nbbb\nccc\nd";
     let index = input.find('b').unwrap();
 
-    assert_eq!(linebreak_index(&input, index, 1, true), 0);
+    assert_eq!(linebreak_index(input, index, 1, true), 0);
     assert_eq!(
-        linebreak_index(&input, index, 1, false),
+        linebreak_index(input, index, 1, false),
         input.find('d').unwrap()
     );
-    assert_eq!(linebreak_index(&input, index, 5, false), input.len());
-    assert_eq!(linebreak_index(&input, index, 4, true), 0);
+    assert_eq!(linebreak_index(input, index, 5, false), input.len());
+    assert_eq!(linebreak_index(input, index, 4, true), 0);
 }

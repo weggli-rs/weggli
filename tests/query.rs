@@ -28,7 +28,7 @@ fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> Vec<QueryRes
     println!("{}", source_tree.root_node().to_sexp());
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c, cpp, None);
+    let qt = build_query_tree(needle, &mut c, cpp, None).unwrap();
 
     let matches = qt.matches(source_tree.root_node(), source);
 
@@ -199,7 +199,7 @@ fn identifiers() {
     let tree = weggli::parse(needle, false);
 
     let mut c = tree.walk();
-    let qt = build_query_tree(needle, &mut c, false, None);
+    let qt = build_query_tree(needle, &mut c, false, None).unwrap();
 
     let identifiers = qt.identifiers();
 
@@ -797,7 +797,7 @@ fn test_strict_calls() {
 fn subexpression_with_multiple_args() {
     // https://github.com/googleprojectzero/weggli/issues/14
 
-    // An unfortunate effect of our sub expression syntax _($x) is 
+    // An unfortunate effect of our sub expression syntax _($x) is
     // that people might wrongly use it as a wildcard function call
     // _($a, $b). This doesn't work (you want to use $fn($a,$b) instead).
     // As we don't support sub expressions with multiple arguments, we
@@ -823,7 +823,6 @@ fn subexpression_with_multiple_args() {
 
     assert_eq!(results.len(), 2);
 }
-
 
 #[test]
 fn test_string_variable() {
@@ -901,7 +900,6 @@ fn test_qualified_identifier() {
     assert_eq!(matches, 1);
 }
 
-
 #[test]
 fn test_sizeof() {
     let needle = r#"{ _ = _(a) + _; }"#;
@@ -918,5 +916,41 @@ fn test_sizeof() {
 
     let matches = parse_and_match_cpp(needle, source);
     assert_eq!(matches, 1);
+}
 
+#[test]
+fn test_number() {
+    let needle = r#"{char buf[$1]; memcpy(buf,_, $2);"#;
+
+    let source = r#"
+    int test_num() {
+        char buf[10];
+        memcpy(buf,_,10);
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 1);
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
+}
+
+#[test]
+fn test_number2() {
+    let needle = r#"{foo($2); $a = $2+$3;}"#;
+
+    let source = r#"
+    int test_num2() {
+        foo(10);
+        int a = 10 + 12;
+        int b = 5 + foo(a);
+    }
+    "#;
+
+    let matches = parse_and_match(needle, source);
+    assert_eq!(matches, 1);
+
+    let matches = parse_and_match_cpp(needle, source);
+    assert_eq!(matches, 1);
 }

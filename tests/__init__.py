@@ -18,6 +18,14 @@ class TestPythonBindings(unittest.TestCase):
             results,
             ["void foo() {int bar=10+foo+bar;}"],
         )
+    def test_normalization(self):
+        results = parse_and_match(
+            "memcpy(a,_,_);", " void foo() {memcpy(a,b,c);} "
+        )
+        self.assertEqual(
+            results,
+            ["void foo() {memcpy(a,b,c);}"],
+        )
 
     def test_color(self):
         results = parse_and_match(
