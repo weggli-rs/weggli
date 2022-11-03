@@ -27,7 +27,7 @@ fn run_query(s: &(tree_sitter::Tree, String), pattern: &str) {
 
     let matches = qt.matches(s.0.root_node(), &s.1);
     for m in matches {
-        m.display(&s.1, 500, 500);
+        m.display(&s.1, 500, 500, false);
     }
 }
 

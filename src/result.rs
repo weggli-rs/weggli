@@ -16,7 +16,7 @@ limitations under the License.
 
 use colored::Colorize;
 use rustc_hash::FxHashMap;
-use std::{cmp, ops::Range};
+use std::ops::Range;
 
 /// Struct for storing (partial) query matches.
 /// We really don't want to keep track of tree-sitter AST lifetimes so
@@ -63,22 +63,17 @@ impl<'b> QueryResult {
 
     /// Returns a colored String representation of the result with `before` + `after`
     /// context lines around each captured node.
-    pub fn display(&self, source: &'b str, before: usize, after: usize) -> String {
-
+    pub fn display(
+        &self,
+        source: &'b str,
+        before: usize,
+        after: usize,
+        enable_line_numbers: bool,
+    ) -> String {
         let mut d = DisplayHelper::new(source);
 
-        // Add two lines of the function header
-        // TODO: We should just store the range of the header and always print it in full.
-        let mut header_end = linebreak_index(source, self.function.start, 1, false);
-
-        if self.captures.len() > 1 && self.captures[1].range.start > self.function.start {
-            // Ensure we don't overlap with the range of the next node.
-            header_end = cmp::min(header_end, self.captures[1].range.start - 1);
-        }
-
-        d.add(self.function.start..header_end);
-
-        let mut offset = header_end;
+        // add header
+        d.add(self.function.start..self.function.start + 1);
 
         let mut sorted = self.captures.clone();
         sorted.sort_by(|a, b| a.range.start.cmp(&b.range.start));
@@ -94,48 +89,15 @@ impl<'b> QueryResult {
             clean_ranges.push(r.clone());
         }
 
-        // Iterate over all remaining nodes and print them
-        for (index, r) in clean_ranges.iter().enumerate() {
-            if r.start <= offset {
-                continue;
-            }
-
-            // Print lines before/after the match, based on -A / -B
-            let start = linebreak_index(source, r.start, before, true);
-            let mut end = linebreak_index(source, r.end, after, false);
-
-            // Avoid overlapping with the next node
-            if index < clean_ranges.len() - 1 && r.end < clean_ranges[index + 1].start {
-                end = cmp::min(end, clean_ranges[index + 1].start - 1);
-            }
-
-            // Never go beyond the function boundary.
-            end = cmp::min(end, self.function.end);
-
-            if start <= offset {
-                // we are not skipping anything
-                d.add(offset..r.start);
-            } else {
-                // indicate that some code is skipped
-                d.add(start..r.start);
-            }
-            // Mark the node itself in red.
-            d.highlight(r.start..r.end);
-            d.add(r.end..end);
-            offset = end;
+        // Add highlighted elements
+        for r in clean_ranges.into_iter() {
+            d.highlight(r);
         }
 
-        // Print function ending.
-        if offset < self.function.end {
-            let last_line = linebreak_index(source, self.function.end, 0, true);
-            if offset < last_line {
-                d.add(last_line..self.function.end);
-            } else {
-                d.add(offset..self.function.end);
-            }
-        }
+        // add function ending
+        d.add(self.function.end - 1..self.function.end);
 
-        d.output
+        d.display(before, after, enable_line_numbers)
     }
 
     /// Return the captured value for a variable.
@@ -223,82 +185,139 @@ pub fn merge_results(
         .collect()
 }
 
-// Returns the index of the nth newline before (if `backwards` is set ) or after `source[index]`
-// This is used to display additional context around captured nodes. If not enough newlines
-// exist the function will return 0 (for backwards) or source.len().
-fn linebreak_index(source: &str, index: usize, count: usize, backwards: bool) -> usize {
-    let length = source.len();
-
-    let mut f;
-    let mut b;
-
-    let iter: &mut dyn Iterator<Item = (usize, char)> = if !backwards {
-        f = source[index..length].char_indices();
-        &mut f
-    } else {
-        b = source[..index].char_indices().rev();
-        &mut b
-    };
-
-    let newline_index = iter.filter(|(_, c)| *c == '\n').nth(count);
-
-    match newline_index {
-        Some((i, _)) if !backwards => cmp::min(length, index + i + 1),
-        Some((i, _)) => i,
-        None if !backwards => length,
-        None => 0,
-    }
-}
-
 struct DisplayHelper<'a> {
-    source: &'a str,
-    offset: usize,
-    output: String,
-    _line: usize
+    lines: Vec<(usize, &'a str, u8)>,
+    highlights: Vec<Range<usize>>,
+    curr: usize,
+    first: usize,
+    last: usize,
 }
 
 impl<'a> DisplayHelper<'a> {
-
     fn new(source: &'a str) -> DisplayHelper<'a> {
-        DisplayHelper { source, offset: 0, output: String::with_capacity(1000), _line: 0 }
-    }
+        let mut lines = Vec::new();
+        let mut offset = 0;
+        for l in source.split('\n') {
+            lines.push((offset, l, 0));
+            offset += l.len() + 1;
+        }
 
-    fn add(&mut self, range: Range<usize>) {
-        self._add(range, false);
-
+        DisplayHelper {
+            lines,
+            highlights: Vec::new(),
+            curr: 0,
+            first: 0xFFFFFFFF,
+            last: 0,
+        }
     }
 
     fn highlight(&mut self, range: Range<usize>) {
-        self._add(range, true)
+        self.add(range.clone());
+        self.highlights.push(range);
     }
 
-    fn _add(&mut self, range: Range<usize>, colored: bool) {
-        assert!(self.offset <= range.start);
-        if self.offset < range.start && self.offset!=0 {
-            self.output += ".."
+    fn add(&mut self, range: Range<usize>) {
+        for (line_nr, (offset, l, print)) in self.lines.iter_mut().enumerate().skip(self.curr) {
+            if *print == 0 && range.start < (*offset + l.len()) && (*offset < range.end) {
+                self.first = line_nr.min(self.first);
+                self.last = line_nr.max(self.last);
+                *print = 1;
+            } else if *offset >= range.end {
+                self.curr -= 1;
+                break;
+            }
+            self.curr += 1;
+        }
+    }
+
+    fn format(&self, start_offset: usize, l: &str, hindex: usize) -> String {
+        let highlights =
+            self.highlights.iter().skip(hindex).filter(|range| {
+                range.start <= (start_offset + l.len()) && start_offset <= range.end
+            });
+        let mut result = String::new();
+
+        let mut current_offset = 0;
+        for h in highlights {
+            let start = if h.start > start_offset {
+                h.start - start_offset
+            } else {
+                0
+            };
+
+            let end = if h.end < start_offset + l.len() {
+                h.end - start_offset
+            } else {
+                l.len()
+            };
+
+            result += &l[current_offset..start];
+            result += &format!("{}", l[start..end].red());
+            current_offset = end;
+        }
+        result += &l[current_offset..l.len()];
+        result += "\n";
+        result
+    }
+
+    fn display(&mut self, before: usize, after: usize, enable_line_numbers: bool) -> String {
+        let mut result = String::new();
+        let mut skipped = true;
+
+        for i in self.first..self.last + 1 {
+            if self.lines[i].2 != 1 {
+                continue;
+            }
+
+            let b = if i >= before {
+                self.first.max(i - before)
+            } else {
+                self.first
+            };
+            let a = self.last.min(i + after);
+
+            for j in b..i {
+                self.lines[j].2 = 2;
+            }
+
+            for j in i..(a + 1) {
+                self.lines[j].2 = 2;
+            }
         }
 
-        self.offset = range.end;
+        for (line_nr, (offset, l, p)) in self.lines.iter().enumerate() {
+            if *p == 0 {
+                if !skipped {
+                    skipped = true;
+                    if enable_line_numbers {
+                        let length = (line_nr - 1).to_string().len();
+                        if length < 4 {
+                            result += &" ".repeat(4 - length)
+                        }
+                        result += &".".repeat(length);
+                        result += "\n"
+                    } else {
+                        result += "...\n"
+                    }
+                }
+                continue;
+            }
 
-        if colored {
-            self.output += &format!("{}", &self.source[range].red());
+            if enable_line_numbers {
+                result += &format!("{:>4}: ", line_nr + 1);
+            }
+            result += &self.format(*offset, l, 0);
+            skipped = false;
+        }
+
+        let t = if skipped {
+            6
         } else {
-            self.output += &self.source[range]
+            1
         };
+
+        result.truncate(result.len() - t);
+
+        result
     }
-
-}
-
-#[test]
-fn test_linebreak_index() {
-    let input = "aaa\nbbb\nccc\nd";
-    let index = input.find('b').unwrap();
-
-    assert_eq!(linebreak_index(input, index, 1, true), 0);
-    assert_eq!(
-        linebreak_index(input, index, 1, false),
-        input.find('d').unwrap()
-    );
-    assert_eq!(linebreak_index(input, index, 5, false), input.len());
-    assert_eq!(linebreak_index(input, index, 4, true), 0);
 }

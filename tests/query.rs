@@ -33,7 +33,7 @@ fn parse_and_match_helper(needle: &str, source: &str, cpp: bool) -> Vec<QueryRes
     let matches = qt.matches(source_tree.root_node(), source);
 
     for m in &matches {
-        println!("{}", m.display(source, 0, 0));
+        println!("{}", m.display(source, 0, 0, true));
     }
     matches
 }

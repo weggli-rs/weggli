@@ -32,6 +32,7 @@ pub struct Args {
     pub force_query: bool,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
+    pub enable_line_numbers: bool
 }
 
 /// Parse command arguments and return them inside the Args structure.
@@ -158,6 +159,13 @@ pub fn parse_arguments() -> Args {
                 .multiple(true)
                 .help("Only search files that match the given regex."),
         )
+        .arg(
+            Arg::with_name("line-numbers")
+                .long("line-numbers")
+                .short("n")
+                .takes_value(false)
+                .help("Enable line numbers"),
+        )
         .get_matches();
 
     let helper = |option_name| -> Vec<String> {
@@ -232,6 +240,8 @@ pub fn parse_arguments() -> Args {
 
     let force_query = matches.occurrences_of("force") > 0;
 
+    let enable_line_numbers = matches.occurrences_of("line-numbers") > 0;
+
     Args {
         path,
         pattern,
@@ -246,6 +256,7 @@ pub fn parse_arguments() -> Args {
         force_query,
         include,
         exclude,
+        enable_line_numbers
     }
 }
 
