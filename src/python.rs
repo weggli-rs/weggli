@@ -70,7 +70,7 @@ fn display(p: &QueryResultPy, source: &str, color: Option<bool>) -> PyResult<Str
     if let Some(color_override) = color {
         colored::control::set_override(color_override);
     }
-    let r = p.qr.display(source, 10, 10);
+    let r = p.qr.display(source, 10, 10, false);
     colored::control::unset_override();
     Ok(r)
 }
