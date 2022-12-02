@@ -331,7 +331,7 @@ strict:   Enable stricter matching. This turns off statement unwrapping and gree
  Input directory or file to search. By default, weggli will search inside 
  .c and .h files for the default C mode or .cc, .cpp, .cxx, .h and .hpp files when
  executing in C++ mode (using the --cpp option).
- Alternative file endings can be specified using the --extensions (-e) option.
+ Alternative file endings can be specified using the --extensions=h,c (-e) option.
  
  When combining weggli with other tools or preprocessing steps, 
  files can also be specified via STDIN by setting the directory to '-' 
