@@ -32,7 +32,7 @@ pub struct Args {
     pub force_query: bool,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
-    pub enable_line_numbers: bool
+    pub enable_line_numbers: bool,
 }
 
 /// Parse command arguments and return them inside the Args structure.
@@ -256,7 +256,7 @@ pub fn parse_arguments() -> Args {
         force_query,
         include,
         exclude,
-        enable_line_numbers
+        enable_line_numbers,
     }
 }
 
@@ -267,7 +267,7 @@ mod help {
  
  Use -h for short descriptions and --help for more details.
  
- Homepage: https://github.com/googleprojectzero/weggli";
+ Homepage: https://github.com/weggli-rs/weggli";
 
     pub const TEMPLATE: &str = "\
  {bin} {version}

@@ -12,7 +12,7 @@ jobs:
       - name: Install latest rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.60.0
+          toolchain: 1.63.0
           override: true
 
       - name: install python dependencies
