@@ -28,6 +28,10 @@ fn main() {
         .cpp(true)
         .include("third_party/grammars/")
         .file("third_party/grammars/weggli-cpp/src/scanner.cc")
+        // keep all symbols until linking (https://doc.rust-lang.org/rustc/command-line-arguments.html#linking-modifiers-whole-archive)
+        .link_lib_modifier("+whole-archive")
+        // don't bundle into rlib, but link to the object files instead (+bundle is incompatible with +whole-archive) (https://doc.rust-lang.org/rustc/command-line-arguments.html#linking-modifiers-bundle)
+        .link_lib_modifier("-bundle")
         .flag("-w")
         .compile("tree-sitter-cpp-scanner");
 

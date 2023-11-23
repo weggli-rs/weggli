@@ -26,7 +26,7 @@ weggli is inspired by great tools like [Semgrep](https://semgrep.dev/), [Coccine
 ```
 Use -h for short descriptions and --help for more details.
 
- Homepage: https://github.com/googleprojectzero/weggli
+ Homepage: https://github.com/weggli-rs/weggli
 
  USAGE: weggli [OPTIONS] <PATTERN> <PATH>
 
