@@ -264,109 +264,108 @@ mod help {
     pub const ABOUT: &str = "\
  weggli is a semantic search tool for C and C++ codebases.
  It is designed to quickly find interesting code pattern in large codebases.
- 
+
  Use -h for short descriptions and --help for more details.
- 
+
  Homepage: https://github.com/weggli-rs/weggli";
 
-    pub const TEMPLATE: &str = "\
- {bin} {version}
+    pub const TEMPLATE: &str = " {bin} {version}
  {author}
- 
+
  {about}
- 
+
  USAGE: {usage}
- 
+
  ARGS:
- {positionals}
- 
+{positionals}
+
  OPTIONS:
- {unified}";
+{unified}";
 
     pub const PATTERN: &str = "\
- A weggli search pattern. weggli's query language closely resembles
- C and C++ with a small number of extra features.
- 
- For example, the pattern '{_ $buf[_]; memcpy($buf,_,_);}' will
- find all calls to memcpy that directly write into a stack buffer.
- 
- Besides normal C and C++ constructs, weggli's query language
- supports the following features:
- 
- _        Wildcard. Will match on any AST node. 
- 
- $var     Variables. Can be used to write queries that are independent
-          of identifiers. Variables match on identifiers, types,
-          field names or namespaces. The --unique option
-          optionally enforces that $x != $y != $z. The --regex option can
-          enforce that the variable has to match (or not match) a
-          regular expression.
- 
- _(..)    Subexpressions. The _(..) wildcard matches on arbitrary
-          sub expressions. This can be helpful if you are looking for some
-          operation involving a variable, but don't know more about it.
-          For example, _(test) will match on expressions like test+10,
-          buf[test->size] or f(g(&test));
- 
- not:     Negative sub queries. Only show results that do not match the
-          following sub query. For example, '{not: $fv==NULL; not: $fv!=NULL *$v;}'
-          would find pointer dereferences that are not preceded by a NULL check.
+A weggli search pattern. weggli's query language closely resembles
+C and C++ with a small number of extra features.
 
-strict:   Enable stricter matching. This turns off statement unwrapping and greedy
-          function name matching. For example 'strict: func();' will not match
-          on 'if (func() == 1)..' or 'a->func()' anymore. 
- 
- weggli automatically unwraps expression statements in the query source 
- to search for the inner expression instead. This means that the query `{func($x);}` 
- will match on `func(a);`, but also on `if (func(a)) {..}` or  `return func(a)`. 
- Matching on `func(a)` will also match on `func(a,b,c)` or `func(z,a)`. 
- Similarly, `void func($t $param)` will also match function definitions 
- with multiple parameters. 
- 
- Additional patterns can be specified using the --pattern (-p) option. This makes
- it possible to search across functions or type definitions.
- ";
+For example, the pattern '{_ $buf[_]; memcpy($buf,_,_);}' will
+find all calls to memcpy that directly write into a stack buffer.
+
+Besides normal C and C++ constructs, weggli's query language
+supports the following features:
+
+_        Wildcard. Will match on any AST node.
+
+$var     Variables. Can be used to write queries that are independent
+         of identifiers. Variables match on identifiers, types,
+         field names or namespaces. The --unique option
+         optionally enforces that $x != $y != $z. The --regex option can
+         enforce that the variable has to match (or not match) a
+         regular expression.
+
+_(..)    Subexpressions. The _(..) wildcard matches on arbitrary
+         sub expressions. This can be helpful if you are looking for some
+         operation involving a variable, but don't know more about it.
+         For example, _(test) will match on expressions like test+10,
+         buf[test->size] or f(g(&test));
+
+not:     Negative sub queries. Only show results that do not match the
+         following sub query. For example, '{not: $fv==NULL; not: $fv!=NULL *$v;}'
+         would find pointer dereferences that are not preceded by a NULL check.
+
+strict:  Enable stricter matching. This turns off statement unwrapping and greedy
+         function name matching. For example 'strict: func();' will not match
+         on 'if (func() == 1)..' or 'a->func()' anymore.
+
+weggli automatically unwraps expression statements in the query source
+to search for the inner expression instead. This means that the query `{func($x);}`
+will match on `func(a);`, but also on `if (func(a)) {..}` or  `return func(a)`.
+Matching on `func(a)` will also match on `func(a,b,c)` or `func(z,a)`.
+Similarly, `void func($t $param)` will also match function definitions
+with multiple parameters.
+
+Additional patterns can be specified using the --pattern (-p) option. This makes
+it possible to search across functions or type definitions.
+";
 
     pub const PATH: &str = "\
- Input directory or file to search. By default, weggli will search inside 
- .c and .h files for the default C mode or .cc, .cpp, .cxx, .h and .hpp files when
- executing in C++ mode (using the --cpp option).
- Alternative file endings can be specified using the --extensions=h,c (-e) option.
- 
- When combining weggli with other tools or preprocessing steps, 
- files can also be specified via STDIN by setting the directory to '-' 
- and piping a list of filenames.
- ";
+Input directory or file to search. By default, weggli will search inside
+.c and .h files for the default C mode or .cc, .cpp, .cxx, .h and .hpp files when
+executing in C++ mode (using the --cpp option).
+Alternative file endings can be specified using the --extensions=h,c (-e) option.
+
+When combining weggli with other tools or preprocessing steps,
+files can also be specified via STDIN by setting the directory to '-'
+and piping a list of filenames.
+";
 
     pub const REGEX: &str = "\
- Filter variable matches based on a regular expression. 
- This feature uses the Rust regex crate, so most Perl-style
- regular expression features are supported.
- (see https://docs.rs/regex/1.5.4/regex/#syntax)
- 
- Examples:
- 
- Find calls to functions starting with the string 'mem':
- weggli -R 'func=^mem' '$func(_);'       
- 
- Find memcpy calls where the last argument is NOT named 'size':
- weggli -R 's!=^size$' 'memcpy(_,_,$s);' 
- ";
+Filter variable matches based on a regular expression.
+This feature uses the Rust regex crate, so most Perl-style
+regular expression features are supported.
+(see https://docs.rs/regex/1.5.4/regex/#syntax)
+
+Examples:
+
+Find calls to functions starting with the string 'mem':
+weggli -R 'func=^mem' '$func(_);'
+
+Find memcpy calls where the last argument is NOT named 'size':
+weggli -R 's!=^size$' 'memcpy(_,_,$s);'
+";
 
     pub const UNIQUE: &str = "\
- Enforce uniqueness of variable matches.
- By default, two variables such as $a and $b can match on identical values.
- For example, the query '$x=malloc($a); memcpy($x, _, $b);' would
- match on both
- 
- void *buf = malloc(size);
- memcpy(buf, src, size);
- 
- and
- 
- void *buf = malloc(some_constant);
- memcpy(buf, src, size);
- 
- Using the unique flag would filter out the first match as $a==$b.
- ";
+Enforce uniqueness of variable matches.
+By default, two variables such as $a and $b can match on identical values.
+For example, the query '$x=malloc($a); memcpy($x, _, $b);' would
+match on both
+
+void *buf = malloc(size);
+memcpy(buf, src, size);
+
+and
+
+void *buf = malloc(some_constant);
+memcpy(buf, src, size);
+
+Using the unique flag would filter out the first match as $a==$b.
+";
 }
