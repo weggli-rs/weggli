@@ -189,7 +189,9 @@ fn main() {
         s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
 
         if w.len() > 1 {
-            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers));
+            s.spawn(move |_| {
+                multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers)
+            });
         }
     });
 }
@@ -265,6 +267,7 @@ fn iter_files(path: &Path, extensions: Vec<String>) -> impl Iterator<Item = walk
             true
         })
 }
+
 struct WorkItem {
     qt: QueryTree,
     identifiers: Vec<String>,
@@ -381,7 +384,12 @@ fn execute_queries_worker(
                                 "{}:{}\n{}",
                                 path.clone().bold(),
                                 line,
-                                m.display(&source, args.before, args.after, args.enable_line_numbers)
+                                m.display(
+                                    &source,
+                                    args.before,
+                                    args.after,
+                                    args.enable_line_numbers
+                                )
                             );
                         } else {
                             results_tx
@@ -412,7 +420,7 @@ fn multi_query_worker(
     num_queries: usize,
     before: usize,
     after: usize,
-    enable_line_numbers: bool
+    enable_line_numbers: bool,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -453,7 +461,8 @@ fn multi_query_worker(
                 "{}:{}\n{}",
                 r.path.bold(),
                 line,
-                r.result.display(&r.source, before, after, enable_line_numbers)
+                r.result
+                    .display(&r.source, before, after, enable_line_numbers)
             );
         })
     });
