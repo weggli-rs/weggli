@@ -262,7 +262,6 @@ impl<'a> DisplayHelper<'a> {
 
     fn display(&mut self, before: usize, after: usize, enable_line_numbers: bool) -> String {
         let mut result = String::new();
-        let mut skipped = true;
 
         for i in self.first..self.last + 1 {
             if self.lines[i].2 != 1 {
@@ -285,38 +284,37 @@ impl<'a> DisplayHelper<'a> {
             }
         }
 
+        const LINE_NR_WIDTH: usize = 4;
+        const NOTHING_SKIPPED: usize = usize::MAX;
+        let mut pre_skip_len = 0;
+
         for (line_nr, (offset, l, p)) in self.lines.iter().enumerate() {
             if *p == 0 {
-                if !skipped {
-                    skipped = true;
+                if pre_skip_len == NOTHING_SKIPPED {
+                    pre_skip_len = result.len();
                     if enable_line_numbers {
                         let length = (line_nr - 1).to_string().len();
-                        if length < 4 {
-                            result += &" ".repeat(4 - length)
+                        if length < LINE_NR_WIDTH {
+                            result += &" ".repeat(LINE_NR_WIDTH - length)
                         }
                         result += &".".repeat(length);
-                        result += "\n"
+                        result += "\n";
                     } else {
-                        result += "...\n"
+                        result += "...\n";
                     }
                 }
                 continue;
             }
 
             if enable_line_numbers {
-                result += &format!("{:>4}: ", line_nr + 1);
+                result += &format!("{:>width$}: ", line_nr + 1, width = LINE_NR_WIDTH);
             }
+
             result += &self.format(*offset, l, 0);
-            skipped = false;
+            pre_skip_len = NOTHING_SKIPPED;
         }
 
-        let t = if skipped {
-            6
-        } else {
-            1
-        };
-
-        result.truncate(result.len() - t);
+        result.truncate(std::cmp::min(result.len(), pre_skip_len).saturating_sub(1));
 
         result
     }

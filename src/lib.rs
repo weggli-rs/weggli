@@ -59,7 +59,7 @@ pub fn get_parser(cpp: bool) -> Parser {
         unsafe { tree_sitter_cpp() }
     };
 
-    let mut parser  = Parser::new();
+    let mut parser = Parser::new();
     if let Err(e) = parser.set_language(language) {
         eprintln!("{}", e);
         panic!();

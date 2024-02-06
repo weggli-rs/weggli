@@ -524,11 +524,11 @@ impl QueryBuilder {
         let mut result = if kind == "type_identifier" {
             "[ (type_identifier) (sized_type_specifier) (primitive_type)]".to_string()
         } else if kind == "identifier" && pattern.starts_with('$') {
-            if is_num_var(pattern) && parent!="declarator" {
+            if is_num_var(pattern) && parent != "declarator" {
                 "(number_literal)".to_string()
-            }
-            else if self.cpp {
-                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]".to_string()
+            } else if self.cpp {
+                "[(identifier) (field_expression) (field_identifier) (qualified_identifier) (this)]"
+                    .to_string()
             } else {
                 "[(identifier) (field_expression) (field_identifier)]".to_string()
             }

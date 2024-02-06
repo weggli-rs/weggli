@@ -34,11 +34,13 @@ use std::{io::prelude::*, path::PathBuf};
 use thread_local::ThreadLocal;
 use tree_sitter::Tree;
 use walkdir::WalkDir;
-use weggli::RegexMap;
 
 use weggli::parse_search_pattern;
 use weggli::query::QueryTree;
 use weggli::result::QueryResult;
+use weggli::RegexMap;
+
+use cli::PATH_DASH_FOR_STDIN;
 
 mod cli;
 
@@ -71,7 +73,7 @@ fn main() {
     // We also extract the identifiers at this point
     // to use them for file filtering later on.
     // Invalid patterns trigger a process exit in validate_query so
-    // after this point we now that all patterns are valid.
+    // after this point we know that all patterns are valid.
     // The loop also fills the `variables` set with used variable names.
     let work: Vec<WorkItem> = args
         .pattern
@@ -119,13 +121,10 @@ fn main() {
         v.iter()
             .map(|s| {
                 let r = Regex::new(s);
-                match r {
-                    Ok(regex) => regex,
-                    Err(e) => {
-                        eprintln!("Regex error {}", e);
-                        std::process::exit(1)
-                    }
-                }
+                r.unwrap_or_else(|e| {
+                    eprintln!("Regex error {}", e);
+                    std::process::exit(1)
+                })
             })
             .collect()
     };
@@ -133,20 +132,24 @@ fn main() {
     let exclude_re = helper_regex(&args.exclude);
     let include_re = helper_regex(&args.include);
 
-    // Collect and filter our input file set.
-    let mut files: Vec<PathBuf> = if args.path.to_string_lossy() == "-" {
-        std::io::stdin()
-            .lock()
-            .lines()
-            .filter_map(|l| l.ok())
-            .map(|s| Path::new(&s).to_path_buf())
-            .collect()
-    } else {
-        iter_files(&args.path, args.extensions.clone())
-            .map(|d| d.into_path())
-            .collect()
-    };
+    // Collect files from input path(s) and/or stdin.
+    let mut files: Vec<PathBuf> = Vec::new();
+    args.paths.iter().for_each(|path| {
+        if path == Path::new(PATH_DASH_FOR_STDIN) {
+            std::io::stdin()
+                .lock()
+                .lines()
+                .map_while(Result::ok)
+                .map(|s| Path::new(&s).to_path_buf())
+                .for_each(|p| files.push(p));
+        } else {
+            iter_files(path, args.extensions.clone())
+                .map(|d| d.into_path())
+                .for_each(|p| files.push(p));
+        }
+    });
 
+    // Filter our input file set.
     if !exclude_re.is_empty() || !include_re.is_empty() {
         // Filter files based on include and exclude regexes
         files.retain(|f| {
@@ -189,7 +192,9 @@ fn main() {
         s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
 
         if w.len() > 1 {
-            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers));
+            s.spawn(move |_| {
+                multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers)
+            });
         }
     });
 }
@@ -265,6 +270,7 @@ fn iter_files(path: &Path, extensions: Vec<String>) -> impl Iterator<Item = walk
             true
         })
 }
+
 struct WorkItem {
     qt: QueryTree,
     identifiers: Vec<String>,
@@ -301,7 +307,7 @@ fn parse_files_worker(
                     let mut parser = tl
                         .get_or(|| RefCell::new(weggli::get_parser(is_cpp)))
                         .borrow_mut();
-                    let tree = parser.parse(&source.as_bytes(), None).unwrap();
+                    let tree = parser.parse(source.as_bytes(), None).unwrap();
                     Some((tree, source.to_string()))
                 }
             };
@@ -381,7 +387,12 @@ fn execute_queries_worker(
                                 "{}:{}\n{}",
                                 path.clone().bold(),
                                 line,
-                                m.display(&source, args.before, args.after, args.enable_line_numbers)
+                                m.display(
+                                    &source,
+                                    args.before,
+                                    args.after,
+                                    args.enable_line_numbers
+                                )
                             );
                         } else {
                             results_tx
@@ -412,7 +423,7 @@ fn multi_query_worker(
     num_queries: usize,
     before: usize,
     after: usize,
-    enable_line_numbers: bool
+    enable_line_numbers: bool,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -453,7 +464,8 @@ fn multi_query_worker(
                 "{}:{}\n{}",
                 r.path.bold(),
                 line,
-                r.result.display(&r.source, before, after, enable_line_numbers)
+                r.result
+                    .display(&r.source, before, after, enable_line_numbers)
             );
         })
     });
