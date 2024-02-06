@@ -34,11 +34,13 @@ use std::{io::prelude::*, path::PathBuf};
 use thread_local::ThreadLocal;
 use tree_sitter::Tree;
 use walkdir::WalkDir;
-use weggli::RegexMap;
 
 use weggli::parse_search_pattern;
 use weggli::query::QueryTree;
 use weggli::result::QueryResult;
+use weggli::RegexMap;
+
+use cli::PATH_DASH_FOR_STDIN;
 
 mod cli;
 
@@ -130,20 +132,24 @@ fn main() {
     let exclude_re = helper_regex(&args.exclude);
     let include_re = helper_regex(&args.include);
 
-    // Collect and filter our input file set.
-    let mut files: Vec<PathBuf> = if args.path.to_string_lossy() == "-" {
-        std::io::stdin()
-            .lock()
-            .lines()
-            .map_while(Result::ok)
-            .map(|s| Path::new(&s).to_path_buf())
-            .collect()
-    } else {
-        iter_files(&args.path, args.extensions.clone())
-            .map(|d| d.into_path())
-            .collect()
-    };
+    // Collect files from input path(s) and/or stdin.
+    let mut files: Vec<PathBuf> = Vec::new();
+    args.paths.iter().for_each(|path| {
+        if path == Path::new(PATH_DASH_FOR_STDIN) {
+            std::io::stdin()
+                .lock()
+                .lines()
+                .map_while(Result::ok)
+                .map(|s| Path::new(&s).to_path_buf())
+                .for_each(|p| files.push(p));
+        } else {
+            iter_files(path, args.extensions.clone())
+                .map(|d| d.into_path())
+                .for_each(|p| files.push(p));
+        }
+    });
 
+    // Filter our input file set.
     if !exclude_re.is_empty() || !include_re.is_empty() {
         // Filter files based on include and exclude regexes
         files.retain(|f| {

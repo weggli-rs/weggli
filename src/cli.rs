@@ -15,11 +15,15 @@ limitations under the License.
 */
 
 use clap::{App, Arg};
+use colored::Colorize;
 use simplelog::*;
 use std::path::{Path, PathBuf};
 
+pub const PATH_DASH_FOR_STDIN: &str = "-";
+const PATH_DOT: &str = ".";
+
 pub struct Args {
-    pub path: PathBuf,
+    pub paths: Vec<PathBuf>,
     pub pattern: Vec<String>,
     pub before: usize,
     pub after: usize,
@@ -67,6 +71,7 @@ pub fn parse_arguments() -> Args {
             Arg::with_name("PATH")
                 .help("A file or directory to search.")
                 .long_help(help::PATH)
+                .multiple(true)
                 .required(true)
                 .index(2),
         )
@@ -184,8 +189,6 @@ pub fn parse_arguments() -> Args {
 
     let _ = SimpleLogger::init(level, Config::default());
 
-    let directory = Path::new(matches.value_of("PATH").unwrap_or("."));
-
     let mut pattern = vec![matches.value_of("PATTERN").unwrap().to_string()];
     if let Some(p) = matches.values_of("p") {
         pattern.extend(p.map(|v| v.to_string()))
@@ -193,11 +196,35 @@ pub fn parse_arguments() -> Args {
 
     let regexes = helper("regex");
 
-    let path = if directory.is_absolute() || directory.to_string_lossy() == "-" {
-        directory.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap().join(directory)
-    };
+    let mut seen_dash_argument = false;
+    let paths = matches
+        .values_of("PATH")
+        .expect("argparser ensures presence")
+        .map(|path| {
+            let path = Path::new(path);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else if path == Path::new(PATH_DOT) {
+                std::env::current_dir().unwrap().clone()
+            } else if path == Path::new(PATH_DASH_FOR_STDIN) {
+                // Handle error here, before stdin is read the first time
+                if seen_dash_argument {
+                    eprintln!(
+                        "{}",
+                        String::from(
+                            "Argument '-' to read file list from STDIN can only be present once"
+                        )
+                        .red()
+                    );
+                    std::process::exit(1)
+                }
+                seen_dash_argument = true;
+                path.to_path_buf()
+            } else {
+                std::env::current_dir().unwrap().join(path)
+            }
+        })
+        .collect();
 
     let before = match matches.value_of("before") {
         Some(v) => v.parse().unwrap_or(5),
@@ -243,7 +270,7 @@ pub fn parse_arguments() -> Args {
     let enable_line_numbers = matches.occurrences_of("line-numbers") > 0;
 
     Args {
-        path,
+        paths,
         pattern,
         before,
         after,
