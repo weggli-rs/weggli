@@ -71,7 +71,7 @@ fn main() {
     // We also extract the identifiers at this point
     // to use them for file filtering later on.
     // Invalid patterns trigger a process exit in validate_query so
-    // after this point we now that all patterns are valid.
+    // after this point we know that all patterns are valid.
     // The loop also fills the `variables` set with used variable names.
     let work: Vec<WorkItem> = args
         .pattern
@@ -119,13 +119,10 @@ fn main() {
         v.iter()
             .map(|s| {
                 let r = Regex::new(s);
-                match r {
-                    Ok(regex) => regex,
-                    Err(e) => {
-                        eprintln!("Regex error {}", e);
-                        std::process::exit(1)
-                    }
-                }
+                r.unwrap_or_else(|e| {
+                    eprintln!("Regex error {}", e);
+                    std::process::exit(1)
+                })
             })
             .collect()
     };
@@ -138,7 +135,7 @@ fn main() {
         std::io::stdin()
             .lock()
             .lines()
-            .filter_map(|l| l.ok())
+            .map_while(Result::ok)
             .map(|s| Path::new(&s).to_path_buf())
             .collect()
     } else {
@@ -304,7 +301,7 @@ fn parse_files_worker(
                     let mut parser = tl
                         .get_or(|| RefCell::new(weggli::get_parser(is_cpp)))
                         .borrow_mut();
-                    let tree = parser.parse(&source.as_bytes(), None).unwrap();
+                    let tree = parser.parse(source.as_bytes(), None).unwrap();
                     Some((tree, source.to_string()))
                 }
             };

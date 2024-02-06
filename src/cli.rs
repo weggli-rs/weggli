@@ -178,8 +178,8 @@ pub fn parse_arguments() -> Args {
 
     let level = match matches.occurrences_of("v") {
         0 => LevelFilter::Warn,
-        1 => log::LevelFilter::Info,
-        _ => log::LevelFilter::Debug,
+        1 => LevelFilter::Info,
+        _ => LevelFilter::Debug,
     };
 
     let _ = SimpleLogger::init(level, Config::default());
