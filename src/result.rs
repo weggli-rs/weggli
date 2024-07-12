@@ -73,7 +73,7 @@ impl<'b> QueryResult {
         let mut d = DisplayHelper::new(source);
 
         // add header
-        d.add(self.function.start..self.function.start + 1);
+        // d.add(self.function.start..self.function.start + 1);
 
         let mut sorted = self.captures.clone();
         sorted.sort_by(|a, b| a.range.start.cmp(&b.range.start));
@@ -98,6 +98,26 @@ impl<'b> QueryResult {
         d.add(self.function.end - 1..self.function.end);
 
         d.display(before, after, enable_line_numbers)
+    }
+
+    // Range of match ignoring range of function (more useful for replacing).
+    // Note: offsets in bytes not utf8 chars.
+    pub fn inner_range(&self) -> Vec<usize> {
+        let mut sorted = self.captures.clone();
+        sorted.sort_by(|a, b| a.range.start.cmp(&b.range.start));
+
+        // Find min/max ignoring the 'function'
+        let mut min = sorted[1].range.start;
+        let mut max = sorted[1].range.end;
+        for r in sorted.into_iter().skip(2).map(|c| c.range) {
+            if r.start < min {
+                min = r.start;
+            }
+            if r.end > max {
+                max = r.end;
+            }
+        }
+        [min, max].to_vec()
     }
 
     /// Return the captured value for a variable.
@@ -310,11 +330,7 @@ impl<'a> DisplayHelper<'a> {
             skipped = false;
         }
 
-        let t = if skipped {
-            6
-        } else {
-            1
-        };
+        let t = if skipped { 6 } else { 1 };
 
         result.truncate(result.len() - t);
 

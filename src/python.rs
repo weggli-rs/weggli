@@ -75,6 +75,13 @@ fn display(p: &QueryResultPy, source: &str, color: Option<bool>) -> PyResult<Str
     Ok(r)
 }
 
+#[pyfunction()]
+#[pyo3(text_signature = "(q)")]
+fn inner_range(p: &QueryResultPy) -> PyResult<Vec<usize>> {
+    let r = p.qr.inner_range();
+    Ok(r)
+}
+
 #[pymodule]
 fn weggli(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<QueryTreePy>()?;
@@ -82,6 +89,7 @@ fn weggli(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(identifiers, m)?)?;
     m.add_function(wrap_pyfunction!(matches, m)?)?;
     m.add_function(wrap_pyfunction!(display, m)?)?;
+    m.add_function(wrap_pyfunction!(inner_range, m)?)?;
 
     Ok(())
 }
