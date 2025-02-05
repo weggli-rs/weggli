@@ -64,6 +64,16 @@ fn matches(p: &QueryTreePy, source: &str, cpp: bool) -> PyResult<Vec<QueryResult
     Ok(r)
 }
 
+#[pyfunction]
+#[pyo3(text_signature = "(q, key, source)")]
+fn captured_value(p: &QueryResultPy, key: &str, source: &str) -> PyResult<Option<String>> {
+    let r = match p.qr.value(key, source) {
+        Some(x) => Some(x.to_string()),
+        None => None,
+    };
+    Ok(r)
+}
+
 #[pyfunction(color = "None")]
 #[pyo3(text_signature = "(q, source, color)")]
 fn display(p: &QueryResultPy, source: &str, color: Option<bool>) -> PyResult<String> {
@@ -81,6 +91,7 @@ fn weggli(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse_query, m)?)?;
     m.add_function(wrap_pyfunction!(identifiers, m)?)?;
     m.add_function(wrap_pyfunction!(matches, m)?)?;
+    m.add_function(wrap_pyfunction!(captured_value, m)?)?;
     m.add_function(wrap_pyfunction!(display, m)?)?;
 
     Ok(())
