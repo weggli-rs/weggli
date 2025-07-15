@@ -36,7 +36,7 @@ features = ["extension-module"]
 optional = true
 
 [target.'cfg(target_family = "unix")'.dependencies]
-nix = "0.25.0"
+nix = { version = "0.30.1", features = ["signal"] }
 
 [build-dependencies]
 cc = "1.0.83"
