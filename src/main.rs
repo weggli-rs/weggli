@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use std::{collections::HashMap, path::Path};
-use std::{collections::HashSet, fs};
+use std::{collections::HashSet, collections::BTreeMap, fs};
 use std::{io::prelude::*, path::PathBuf};
 use thread_local::ThreadLocal;
 use tree_sitter::Tree;
@@ -39,8 +39,69 @@ use weggli::RegexMap;
 use weggli::parse_search_pattern;
 use weggli::query::QueryTree;
 use weggli::result::QueryResult;
+use serde::{Deserialize, Serialize};
 
 mod cli;
+
+fn collect_json_match(
+    json_matches: &Option<Arc<std::sync::Mutex<Vec<JsonMatch>>>>,
+    result: &QueryResult,
+    source: &str,
+    path: &str,
+    line: usize,
+) {
+    if let Some(ref json_matches) = json_matches {
+        let highlighted_lines = result.highlighted_lines(source);
+        let mut lines = BTreeMap::new();
+        
+        for line_num in highlighted_lines {
+            let line_content = source.lines().nth(line_num - 1).unwrap_or("").to_string();
+            lines.insert(line_num, line_content);
+        }
+        
+        let json_match = JsonMatch {
+            path: path.to_string(),
+            line,
+            lines,
+        };
+        
+        json_matches.lock().unwrap().push(json_match);
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct JsonMatch {
+    path: String,
+    line: usize,
+    lines: BTreeMap<usize, String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct JsonSummary {
+    matched_patterns: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+struct JsonReport {
+    matches: Vec<JsonMatch>,
+    summary: JsonSummary,
+    parameters: JsonParameters,
+}
+
+#[derive(Serialize, Deserialize)]
+struct JsonParameters {
+    pattern: Vec<String>,
+    path: String,
+    before: usize,
+    after: usize,
+    extensions: Vec<String>,
+    regexes: Vec<String>,
+    limit: bool,
+    cpp: bool,
+    unique: bool,
+    include: Vec<String>,
+    exclude: Vec<String>,
+}
 
 fn main() {
     reset_signal_pipe_handler();
@@ -167,6 +228,15 @@ fn main() {
     }
 
     // The main parallelized work pipeline
+    let json_matches = if args.json_output.is_some() {
+        Some(Arc::new(std::sync::Mutex::new(Vec::new())))
+    } else {
+        None
+    };
+
+    let json_matches_for_output = json_matches.clone();
+    let args_clone = args.clone();
+
     rayon::scope(|s| {
         // spin up channels for worker communication
         let (ast_tx, ast_rx) = mpsc::channel();
@@ -178,6 +248,7 @@ fn main() {
         let before = args.before;
         let after = args.after;
         let enable_line_numbers = args.enable_line_numbers;
+        let json_matches_clone = json_matches.clone();
 
         // Spawn worker to iterate through files, parse potential matches and forward ASTs
         s.spawn(move |_| parse_files_worker(files, ast_tx, w, cpp));
@@ -186,12 +257,50 @@ fn main() {
         // on the results. For single query executions, we can
         // directly print any remaining matches. For multi
         // query runs we forward them to our next worker function
-        s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
+        s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args_clone, json_matches_clone));
 
         if w.len() > 1 {
-            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers));
+            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers, json_matches.clone()));
         }
     });
+
+    // Write JSON output if requested
+    if let Some(json_path) = &args.json_output {
+        let matches_arc = json_matches_for_output.unwrap();
+        let matches = matches_arc.lock().unwrap();
+        
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let relative_path = match args.path.strip_prefix(&current_dir) {
+            Ok(rel_path) => rel_path.display().to_string(),
+            Err(_) => args.path.to_string_lossy().to_string(),
+        };
+        
+        let json_report = JsonReport {
+            matches: matches.clone(),
+            summary: JsonSummary {
+                matched_patterns: matches.len(),
+            },
+            parameters: JsonParameters {
+                pattern: args.pattern.clone(),
+                path: relative_path,
+                before: args.before,
+                after: args.after,
+                extensions: args.extensions.clone(),
+                regexes: args.regexes.clone(),
+                limit: args.limit,
+                cpp: args.cpp,
+                unique: args.unique,
+                include: args.include.clone(),
+                exclude: args.exclude.clone(),
+            },
+        };
+        
+        let json_content = serde_json::to_string_pretty(&json_report).unwrap();
+        std::fs::write(json_path, json_content).unwrap_or_else(|e| {
+            eprintln!("Failed to write JSON output to {}: {}", json_path, e);
+            std::process::exit(1);
+        });
+    }
 }
 
 enum RegexError {
@@ -278,6 +387,7 @@ fn parse_files_worker(
     work: &[WorkItem],
     is_cpp: bool,
 ) {
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let tl = ThreadLocal::new();
 
     files
@@ -306,11 +416,16 @@ fn parse_files_worker(
                 }
             };
             if let Some((source_tree, source)) = maybe_parse(&path) {
+                let relative_path = match path.strip_prefix(&current_dir) {
+                    Ok(rel_path) => rel_path.display().to_string(),
+                    Err(_) => path.display().to_string(),
+                };
+                
                 sender
                     .send((
                         std::sync::Arc::new(source),
                         source_tree,
-                        path.display().to_string(),
+                        relative_path,
                     ))
                     .unwrap();
             }
@@ -333,6 +448,7 @@ fn execute_queries_worker(
     results_tx: Sender<ResultsCtx>,
     work: &[WorkItem],
     args: &cli::Args,
+    json_matches: Option<Arc<std::sync::Mutex<Vec<JsonMatch>>>>,
 ) {
     receiver.into_iter().par_bridge().for_each_with(
         results_tx,
@@ -374,9 +490,12 @@ fn execute_queries_worker(
 
                     // Print match or forward it if we are in a multi query context
                     let process_match = |m: QueryResult| {
+                        let line = source[..m.start_offset()].matches('\n').count() + 1;
+                        
+                        collect_json_match(&json_matches, &m, &source, &path, line);
+                        
                         // single query
                         if work.len() == 1 {
-                            let line = source[..m.start_offset()].matches('\n').count() + 1;
                             println!(
                                 "{}:{}\n{}",
                                 path.clone().bold(),
@@ -412,7 +531,8 @@ fn multi_query_worker(
     num_queries: usize,
     before: usize,
     after: usize,
-    enable_line_numbers: bool
+    enable_line_numbers: bool,
+    json_matches: Option<Arc<std::sync::Mutex<Vec<JsonMatch>>>>,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -449,6 +569,9 @@ fn multi_query_worker(
     query_results.into_iter().for_each(|rv| {
         rv.into_iter().for_each(|r| {
             let line = r.source[..r.result.start_offset()].matches('\n').count() + 1;
+            
+            collect_json_match(&json_matches, &r.result, &r.source, &r.path, line);
+            
             println!(
                 "{}:{}\n{}",
                 r.path.bold(),

@@ -18,6 +18,7 @@ use clap::{App, Arg};
 use simplelog::*;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub struct Args {
     pub path: PathBuf,
     pub pattern: Vec<String>,
@@ -33,6 +34,7 @@ pub struct Args {
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub enable_line_numbers: bool,
+    pub json_output: Option<String>,
 }
 
 /// Parse command arguments and return them inside the Args structure.
@@ -166,6 +168,13 @@ pub fn parse_arguments() -> Args {
                 .takes_value(false)
                 .help("Enable line numbers"),
         )
+        .arg(
+            Arg::with_name("json")
+                .long("json")
+                .short("j")
+                .takes_value(true)
+                .help("Output results in JSON format to specified file"),
+        )
         .get_matches();
 
     let helper = |option_name| -> Vec<String> {
@@ -242,6 +251,8 @@ pub fn parse_arguments() -> Args {
 
     let enable_line_numbers = matches.occurrences_of("line-numbers") > 0;
 
+    let json_output = matches.value_of("json").map(|s| s.to_string());
+
     Args {
         path,
         pattern,
@@ -257,6 +268,7 @@ pub fn parse_arguments() -> Args {
         include,
         exclude,
         enable_line_numbers,
+        json_output,
     }
 }
 
