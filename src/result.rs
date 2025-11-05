@@ -61,6 +61,45 @@ impl<'b> QueryResult {
         self.function.start
     }
 
+    pub fn end_offset(&self) -> usize {
+        self.function.end
+    }
+
+    /// Get the line numbers that would be highlighted in the display output
+    pub fn highlighted_lines(&self, source: &str) -> Vec<usize> {
+        let mut lines = std::collections::HashSet::new();
+        
+        // Add lines from the function header
+        let header_line = source[..self.function.start].matches('\n').count() + 1;
+        lines.insert(header_line);
+        
+        // Process captures similar to display method
+        let mut sorted = self.captures.clone();
+        sorted.sort_by(|a, b| a.range.start.cmp(&b.range.start));
+        
+        // Filter out overlapping nodes (same logic as display method)
+        let mut clean_ranges: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.captures.len());
+        for r in sorted.into_iter().skip(1).map(|c| c.range) {
+            if !clean_ranges.is_empty() && clean_ranges.last().unwrap().contains(&r.start) {
+                continue;
+            }
+            clean_ranges.push(r.clone());
+        }
+        
+        // Add lines from highlighted ranges
+        for range in clean_ranges {
+            let start_line = source[..range.start].matches('\n').count() + 1;
+            let end_line = source[..range.end].matches('\n').count() + 1;
+            for line_num in start_line..=end_line {
+                lines.insert(line_num);
+            }
+        }
+        
+        let mut result: Vec<usize> = lines.into_iter().collect();
+        result.sort();
+        result
+    }
+
     /// Returns a colored String representation of the result with `before` + `after`
     /// context lines around each captured node.
     pub fn display(
