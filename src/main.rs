@@ -189,7 +189,9 @@ fn main() {
         s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
 
         if w.len() > 1 {
-            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers));
+            s.spawn(move |_| {
+                multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers)
+            });
         }
     });
 }
@@ -270,11 +272,37 @@ struct WorkItem {
     identifiers: Vec<String>,
 }
 
+type ParsedFile = (Arc<String>, Tree, String);
+
+fn parse_file(
+    path: &Path,
+    work: &[WorkItem],
+    parser: &RefCell<tree_sitter::Parser>,
+) -> Option<ParsedFile> {
+    let content = fs::read(path).ok()?;
+    let source = String::from_utf8_lossy(&content);
+
+    let potential_match = work.iter().any(|WorkItem { qt: _, identifiers }| {
+        identifiers.iter().all(|i| source.find(i).is_some())
+    });
+
+    if !potential_match {
+        return None;
+    }
+
+    let tree = parser.borrow_mut().parse(source.as_bytes(), None).unwrap();
+    Some((
+        Arc::new(source.to_string()),
+        tree,
+        path.display().to_string(),
+    ))
+}
+
 /// Iterate over all paths in `files`, parse files that might contain a match for any of the queries
 /// in `work` and send them to the next worker using `sender`.
 fn parse_files_worker(
     files: Vec<PathBuf>,
-    sender: Sender<(Arc<String>, Tree, String)>,
+    sender: Sender<ParsedFile>,
     work: &[WorkItem],
     is_cpp: bool,
 ) {
@@ -283,36 +311,9 @@ fn parse_files_worker(
     files
         .into_par_iter()
         .for_each_with(sender, move |sender, path| {
-            let maybe_parse = |path| {
-                let c = match fs::read(path) {
-                    Ok(content) => content,
-                    Err(_) => return None,
-                };
-
-                let source = String::from_utf8_lossy(&c);
-
-                let potential_match = work.iter().any(|WorkItem { qt: _, identifiers }| {
-                    identifiers.iter().all(|i| source.find(i).is_some())
-                });
-
-                if !potential_match {
-                    None
-                } else {
-                    let mut parser = tl
-                        .get_or(|| RefCell::new(weggli::get_parser(is_cpp)))
-                        .borrow_mut();
-                    let tree = parser.parse(&source.as_bytes(), None).unwrap();
-                    Some((tree, source.to_string()))
-                }
-            };
-            if let Some((source_tree, source)) = maybe_parse(&path) {
-                sender
-                    .send((
-                        std::sync::Arc::new(source),
-                        source_tree,
-                        path.display().to_string(),
-                    ))
-                    .unwrap();
+            let parser = tl.get_or(|| RefCell::new(weggli::get_parser(is_cpp)));
+            if let Some(parsed_file) = parse_file(&path, work, parser) {
+                sender.send(parsed_file).unwrap();
             }
         });
 }
@@ -324,12 +325,86 @@ struct ResultsCtx {
     result: weggli::result::QueryResult,
 }
 
+fn execute_queries<F>(
+    source: Arc<String>,
+    tree: Tree,
+    path: String,
+    work: &[WorkItem],
+    args: &cli::Args,
+    mut process_result: F,
+) where
+    F: FnMut(ResultsCtx),
+{
+    // For each query
+    work.iter()
+        .enumerate()
+        .for_each(|(i, WorkItem { qt, identifiers: _ })| {
+            // Run query
+            let matches = qt.matches(tree.root_node(), &source);
+
+            if matches.is_empty() {
+                return;
+            }
+
+            // Enforce --unique
+            let check_unique = |m: &QueryResult| {
+                if args.unique {
+                    let mut seen = HashSet::new();
+                    m.vars
+                        .keys()
+                        .map(|k| m.value(k, &source).unwrap())
+                        .all(|x| seen.insert(x))
+                } else {
+                    true
+                }
+            };
+
+            let mut skip_set = HashSet::new();
+
+            // Enforce --limit
+            let check_limit = |m: &QueryResult| {
+                if args.limit {
+                    skip_set.insert(m.start_offset())
+                } else {
+                    true
+                }
+            };
+
+            // Print match or forward it if we are in a multi query context
+            let process_match = |m: QueryResult| {
+                // single query
+                if work.len() == 1 {
+                    let line = source[..m.start_offset()].matches('\n').count() + 1;
+                    println!(
+                        "{}:{}\n{}",
+                        path.clone().bold(),
+                        line,
+                        m.display(&source, args.before, args.after, args.enable_line_numbers)
+                    );
+                } else {
+                    process_result(ResultsCtx {
+                        query_index: i,
+                        result: m,
+                        path: path.clone(),
+                        source: source.clone(),
+                    });
+                }
+            };
+
+            matches
+                .into_iter()
+                .filter(check_unique)
+                .filter(check_limit)
+                .for_each(process_match);
+        });
+}
+
 /// Fetches parsed ASTs from `receiver`, runs all queries in `work` on them and
 /// filters the results based on the provided regex `constraints` and --unique --limit switches.
 /// For single query runs, the remaining results are directly printed. Otherwise they get forwarded
 /// to `multi_query_worker` through the `results_tx` channel.
 fn execute_queries_worker(
-    receiver: Receiver<(Arc<String>, Tree, String)>,
+    receiver: Receiver<ParsedFile>,
     results_tx: Sender<ResultsCtx>,
     work: &[WorkItem],
     args: &cli::Args,
@@ -337,70 +412,9 @@ fn execute_queries_worker(
     receiver.into_iter().par_bridge().for_each_with(
         results_tx,
         |results_tx, (source, tree, path)| {
-            // For each query
-            work.iter()
-                .enumerate()
-                .for_each(|(i, WorkItem { qt, identifiers: _ })| {
-                    // Run query
-                    let matches = qt.matches(tree.root_node(), &source);
-
-                    if matches.is_empty() {
-                        return;
-                    }
-
-                    // Enforce --unique
-                    let check_unique = |m: &QueryResult| {
-                        if args.unique {
-                            let mut seen = HashSet::new();
-                            m.vars
-                                .keys()
-                                .map(|k| m.value(k, &source).unwrap())
-                                .all(|x| seen.insert(x))
-                        } else {
-                            true
-                        }
-                    };
-
-                    let mut skip_set = HashSet::new();
-
-                    // Enforce --limit
-                    let check_limit = |m: &QueryResult| {
-                        if args.limit {
-                            skip_set.insert(m.start_offset())
-                        } else {
-                            true
-                        }
-                    };
-
-                    // Print match or forward it if we are in a multi query context
-                    let process_match = |m: QueryResult| {
-                        // single query
-                        if work.len() == 1 {
-                            let line = source[..m.start_offset()].matches('\n').count() + 1;
-                            println!(
-                                "{}:{}\n{}",
-                                path.clone().bold(),
-                                line,
-                                m.display(&source, args.before, args.after, args.enable_line_numbers)
-                            );
-                        } else {
-                            results_tx
-                                .send(ResultsCtx {
-                                    query_index: i,
-                                    result: m,
-                                    path: path.clone(),
-                                    source: source.clone(),
-                                })
-                                .unwrap();
-                        }
-                    };
-
-                    matches
-                        .into_iter()
-                        .filter(check_unique)
-                        .filter(check_limit)
-                        .for_each(process_match);
-                });
+            execute_queries(source, tree, path, work, args, |result| {
+                results_tx.send(result).unwrap()
+            });
         },
     );
 }
@@ -412,7 +426,7 @@ fn multi_query_worker(
     num_queries: usize,
     before: usize,
     after: usize,
-    enable_line_numbers: bool
+    enable_line_numbers: bool,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -453,7 +467,8 @@ fn multi_query_worker(
                 "{}:{}\n{}",
                 r.path.bold(),
                 line,
-                r.result.display(&r.source, before, after, enable_line_numbers)
+                r.result
+                    .display(&r.source, before, after, enable_line_numbers)
             );
         })
     });
