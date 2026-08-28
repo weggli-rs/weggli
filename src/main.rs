@@ -166,6 +166,11 @@ fn main() {
         std::process::exit(1)
     }
 
+    if rayon::current_num_threads() == 1 {
+        execute_serially(files, &work, &args);
+        return;
+    }
+
     // The main parallelized work pipeline
     rayon::scope(|s| {
         // spin up channels for worker communication
@@ -325,6 +330,29 @@ struct ResultsCtx {
     result: weggli::result::QueryResult,
 }
 
+fn execute_serially(files: Vec<PathBuf>, work: &[WorkItem], args: &cli::Args) {
+    let parser = RefCell::new(weggli::get_parser(args.cpp));
+    let mut results = Vec::new();
+
+    for path in files {
+        if let Some((source, tree, path)) = parse_file(&path, work, &parser) {
+            execute_queries(source, tree, path, work, args, |result| {
+                results.push(result)
+            });
+        }
+    }
+
+    if work.len() > 1 {
+        multi_query_worker(
+            results,
+            work.len(),
+            args.before,
+            args.after,
+            args.enable_line_numbers,
+        );
+    }
+}
+
 fn execute_queries<F>(
     source: Arc<String>,
     tree: Tree,
@@ -421,20 +449,22 @@ fn execute_queries_worker(
 
 /// For multi query runs, we collect all independent results first and filter
 /// them to make sure that variable assignments are valid for all queries.
-fn multi_query_worker(
-    results_rx: Receiver<ResultsCtx>,
+fn multi_query_worker<I>(
+    results: I,
     num_queries: usize,
     before: usize,
     after: usize,
     enable_line_numbers: bool,
-) {
+) where
+    I: IntoIterator<Item = ResultsCtx>,
+{
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
         query_results.push(Vec::new());
     }
 
     // collect all results
-    for ctx in results_rx {
+    for ctx in results {
         query_results[ctx.query_index].push(ctx);
     }
 
