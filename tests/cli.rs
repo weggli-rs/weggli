@@ -126,6 +126,31 @@ fn multi_pattern() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn single_rayon_worker() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.env("RAYON_NUM_THREADS", "1")
+        .arg("memcpy(_,_,_);")
+        .arg("./third_party/examples/cluster.c");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("memcpy"));
+
+    let mut cmd = Command::cargo_bin("weggli")?;
+
+    cmd.env("RAYON_NUM_THREADS", "1")
+        .arg("$func(_,hdr->sender)")
+        .arg("-p _ $func($ptr *$src){memcpy (_,$src,_);}")
+        .arg("./third_party/examples/cluster.c");
+    cmd.assert().success().stdout(
+        predicate::str::contains("int clusterProcessPacket(clusterLink *link) {")
+            .and(predicate::str::contains("memcmp(link->node->name,hdr->sender").not()),
+    );
+
+    Ok(())
+}
+
+#[test]
 fn multi_pattern_empty() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("weggli")?;
 
